@@ -724,7 +724,9 @@ final class NotchState: ObservableObject {
 
     var notchW: CGFloat = 185
     var notchH: CGFloat = 32
-    var side: CGFloat { notchH + 12 }
+    @Published var timerShown = false
+    /// Width of each piece sticking out of the collapsed notch; the Foco countdown needs more room.
+    var side: CGFloat { notchH + (timerShown ? 30 : 12) }
     // Expanded layout: sections stacked (Foco, music, shelf), split by hairlines.
     static let width: CGFloat = 470
     static let hPad: CGFloat = 24
@@ -1724,6 +1726,8 @@ final class NotchController {
         if ui.showMedia != showMedia { ui.showMedia = showMedia }
         if ui.showShelf != showShelf { ui.showShelf = showShelf }
         if ui.showFocus != showFocus { ui.showFocus = showFocus }
+        let timerShown = foco.session != nil
+        if ui.timerShown != timerShown { ui.timerShown = timerShown }
 
         let sz = ui.size(extended: np.hasMedia || !shelf.isEmpty || foco.session != nil)
         let rect = NSRect(x: s.frame.midX - sz.width / 2, y: s.frame.maxY - sz.height, width: sz.width, height: sz.height)
