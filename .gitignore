@@ -1,0 +1,7 @@
+# Build output
+NotchUser.app/
+dist/
+*.dSYM/
+
+# macOS
+.DS_Store
