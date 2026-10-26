@@ -99,7 +99,8 @@ void np_run(void *interp, void *cv) {
     }
 
     dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
-    dispatch_source_set_timer(timer, DISPATCH_TIME_NOW, NSEC_PER_SEC, NSEC_PER_SEC / 10);
+    // Changes arrive through the notifications above; the timer is only a safety net.
+    dispatch_source_set_timer(timer, DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC, NSEC_PER_SEC / 2);
     dispatch_source_set_event_handler(timer, ^{ emit(); });
     dispatch_resume(timer);
 

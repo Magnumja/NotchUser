@@ -196,7 +196,8 @@ final class NowPlaying: ObservableObject {
     func start() {
         _ = startHelper()
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.refresh() }
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
+        timer?.tolerance = 0.5
     }
 
     func currentPosition(at date: Date) -> Double {
@@ -208,19 +209,27 @@ final class NowPlaying: ObservableObject {
     // MARK: Sources
 
     private func upsert(_ id: String, title: String, artist: String, duration: Double, position: Double, playing: Bool) {
+        let now = Date()
         var s = sources[id] ?? Source(bundleID: id)
         let newTrack = s.title != title || s.artist != artist
         let hadTrack = !s.title.isEmpty
-        if playing && !s.playing { s.startedAt = Date() }
+        // The views advance the position on their own, so the same state reported again is
+        // skipped: every write to `sources` redraws the notch. Only a real jump (seek) counts.
+        let predicted = s.playing ? s.position + now.timeIntervalSince(s.positionDate) : s.position
+        let changed = sources[id] == nil || newTrack || s.playing != playing
+            || abs(s.duration - duration) > 0.5 || abs(predicted - position) > 1.5
+        guard changed else { return }
+        if playing && !s.playing { s.startedAt = now }
         s.title = title
         s.artist = artist
         s.duration = duration
         s.position = position
-        s.positionDate = Date()
+        s.positionDate = now
         s.playing = playing
-        s.lastSeen = Date()
+        s.lastSeen = now
         if newTrack { s.artRequested = "" }
         sources[id] = s
+        if newTrack && s.player == .music { refreshFavorite() }
         if newTrack && hadTrack && id == selectedID { onTrackChange?() }
     }
 
@@ -231,7 +240,7 @@ final class NowPlaying: ObservableObject {
     }
 
     private func remove(_ id: String) {
-        sources[id] = nil
+        if sources[id] != nil { sources[id] = nil }
     }
 
     private func prune() {
@@ -251,13 +260,15 @@ final class NowPlaying: ObservableObject {
         if let p = pin, sources[p.id] == nil || sources.values.contains(where: { $0.bundleID != p.id && $0.startedAt > p.at }) {
             pin = nil
         }
+        var next = old
         if let p = pin {
-            selectedID = p.id
+            next = p.id
         } else if let latest = sources.values.filter(\.playing).max(by: { $0.startedAt < $1.startedAt }) {
-            selectedID = latest.bundleID
+            next = latest.bundleID
         } else if old == nil || sources[old!] == nil {
-            selectedID = mrCurrent.flatMap { sources[$0] != nil ? $0 : nil } ?? switchable.first?.bundleID
+            next = mrCurrent.flatMap { sources[$0] != nil ? $0 : nil } ?? switchable.first?.bundleID
         }
+        if next != old { selectedID = next }  // assigning the same value would still redraw
         if !manual, old != nil, selectedID != old, selectedID != nil { onTrackChange?() }
     }
 
@@ -367,10 +378,13 @@ final class NowPlaying: ObservableObject {
     }
 
     func refresh() {
+        // The app the system reports as Now Playing already comes from the helper.
+        let covered = helperIn != nil ? mrCurrent : nil
         queue.async { [self] in
             var results: [(Player, [String]?)] = []
             // Checking first so AppleScript never launches a closed app.
-            for p in Player.allCases where !NSRunningApplication.runningApplications(withBundleIdentifier: p.bundleID).isEmpty {
+            for p in Player.allCases where p.bundleID != covered
+                && !NSRunningApplication.runningApplications(withBundleIdentifier: p.bundleID).isEmpty {
                 let f = run(Self.queries[p]!)?.stringValue.map { $0.components(separatedBy: "||") }
                 results.append((p, f.flatMap { $0.count >= 7 ? $0 : nil }))
             }
@@ -387,19 +401,29 @@ final class NowPlaying: ObservableObject {
                 if id != mrCurrent { remove(id) }
                 continue
             }
-            sources[id]?.favorited = f[5] == "true"
             // While the system reports this app the helper already keeps it up to date.
             if id != mrCurrent {
                 upsert(id, title: f[0], artist: f[1], duration: num(f[2]), position: num(f[3]), playing: f[4] == "playing")
-                sources[id]?.favorited = f[5] == "true"
             }
+            let fav = f[5] == "true"
+            if p == .music, sources[id]?.favorited != fav { sources[id]?.favorited = fav }
             let trackKey = f[0] + "|" + f[1]
-            if sources[id]?.artwork == nil || (id != mrCurrent && sources[id]?.artRequested != trackKey) {
+            if sources[id]?.artwork == nil && sources[id]?.artRequested != trackKey {
                 sources[id]?.artRequested = trackKey
                 loadArtwork(p, url: f[6], trackKey: trackKey)
             }
         }
         reselect()
+    }
+
+    private func refreshFavorite() {
+        queue.async { [self] in
+            let fav = run("tell application \"Music\" to get favorited of current track")?.booleanValue ?? false
+            DispatchQueue.main.async {
+                let id = Player.music.bundleID
+                if self.sources[id] != nil, self.sources[id]?.favorited != fav { self.sources[id]?.favorited = fav }
+            }
+        }
     }
 
     private func loadArtwork(_ p: Player, url: String, trackKey: String) {
@@ -806,7 +830,7 @@ struct Waveform: View {
     var playing: Bool
     var color: Color
     var body: some View {
-        TimelineView(.animation(paused: !playing)) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playing)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             HStack(alignment: .center, spacing: 2) {
                 ForEach(0..<4) { i in
@@ -1111,6 +1135,7 @@ struct NotchView: View {
         ZStack(alignment: .top) {
             // Expanded: frosted glass tinted by the album art, fading into solid black
             // at the top so it still blends with the physical notch.
+            if ui.expanded {
             ZStack(alignment: .top) {
                 VisualEffect()
                 Color.black.opacity(0.28)
@@ -1127,7 +1152,8 @@ struct NotchView: View {
                 ], startPoint: .top, endPoint: .bottom)
             }
             .frame(width: ui.expandedSize.width, height: total)
-            .opacity(ui.expanded ? 1 : 0)
+            .transition(.opacity)
+            }
 
             // Collapsed: pure black, it has to look like part of the hardware.
             Color.black.opacity(ui.expanded ? 0 : 1)
@@ -1149,7 +1175,7 @@ struct NotchView: View {
         // (the top stays black so it still merges with the physical notch).
         .overlay(
             shape.stroke(Color.white.opacity(0.10), lineWidth: 8)
-                .blur(radius: 6)
+                .blur(radius: ui.expanded ? 6 : 0)
                 .clipShape(shape)
                 .opacity(ui.expanded ? 1 : 0))
         .overlay(
@@ -1162,8 +1188,8 @@ struct NotchView: View {
         .scaleEffect(x: ui.bump ? 1.07 : 1, y: ui.bump ? 1.16 : 1, anchor: .top)
         .animation(.spring(response: 0.22, dampingFraction: 0.32), value: ui.bump)
         // Halo in the album's color, then the drop shadow.
-        .shadow(color: (ui.showMedia ? np.accent : .white).opacity(ui.expanded ? 0.18 : 0), radius: 24)
-        .shadow(color: .black.opacity(ui.expanded ? 0.45 : 0), radius: 18, y: 8)
+        .shadow(color: (ui.showMedia ? np.accent : .white).opacity(ui.expanded ? 0.18 : 0), radius: ui.expanded ? 24 : 0)
+        .shadow(color: .black.opacity(ui.expanded ? 0.45 : 0), radius: ui.expanded ? 18 : 0, y: ui.expanded ? 8 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environment(\.colorScheme, .dark)
         .animation(.spring(response: 0.42, dampingFraction: 0.76), value: ui.expanded)
@@ -1686,7 +1712,10 @@ final class NotchController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
-        panel.contentView = HostingView(rootView: NotchView(np: np, ui: ui, shelf: shelf, foco: foco))
+        let host = HostingView(rootView: NotchView(np: np, ui: ui, shelf: shelf, foco: foco))
+        // The panel has a fixed frame; without this every redraw also recomputes window constraints.
+        host.sizingOptions = []
+        panel.contentView = host
         layout(screen)
         panel.orderFrontRegardless()
     }
@@ -1713,6 +1742,13 @@ final class NotchController {
     func bump() {
         ui.bump = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) { self.ui.bump = false }
+    }
+
+    /// Whether this notch needs the fast hover loop: it is open, peeking, or the mouse is close.
+    func isHot(_ mouse: NSPoint) -> Bool {
+        guard let s = screen else { return false }
+        let zone = NSRect(x: s.frame.midX - 420, y: s.frame.maxY - 260, width: 840, height: 260)
+        return ui.expanded || Date() < peekUntil || zone.contains(mouse)
     }
 
     func tick(fileDrag: Bool, np: NowPlaying, shelf: Shelf, foco: FocoTimer) {
@@ -1759,7 +1795,8 @@ final class NotchController {
             }
         }
         if inside { peekUntil = .distantPast }
-        panel.ignoresMouseEvents = !(inside || dragNear)
+        let ignore = !(inside || dragNear)
+        if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
     }
 }
 
@@ -1769,6 +1806,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let foco = FocoTimer()
     var controllers: [NotchController] = []
     var hoverTimer: Timer?
+    private var hot = false
     private var idleDragCount = NSPasteboard(name: .drag).changeCount
 
     func applicationDidFinishLaunching(_ n: Notification) {
@@ -1789,7 +1827,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         np.start()
         foco.start()
         if !Settings.shared.onboarded { SettingsWindow.shared.show(welcome: true) }
-        hoverTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.tick() }
+        setTickRate(hot: true)
+        // Mouse events wake the fast loop the moment the cursor heads for a notch
+        // (mouse events need no Accessibility permission).
+        let wake: (NSEvent) -> Void = { [weak self] _ in self?.wakeIfNear() }
+        NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseDragged], handler: wake)
+        NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseDragged]) { e in wake(e); return e }
+    }
+
+    /// 30 checks a second near the notch, 4 a second otherwise.
+    private func setTickRate(hot: Bool) {
+        guard hot != self.hot || hoverTimer == nil else { return }
+        self.hot = hot
+        hoverTimer?.invalidate()
+        let interval = hot ? 1.0 / 30 : 0.25
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in self?.tick() }
+        t.tolerance = interval * 0.2
+        RunLoop.main.add(t, forMode: .common)
+        hoverTimer = t
+    }
+
+    private func wakeIfNear() {
+        guard !hot else { return }
+        let mouse = NSEvent.mouseLocation
+        if NSEvent.pressedMouseButtons & 1 != 0 || controllers.contains(where: { $0.isHot(mouse) }) {
+            setTickRate(hot: true)
+            tick()
+        }
     }
 
     /// Keeps one controller per display that should show the notch.
@@ -1811,6 +1875,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             c.peekUntil = Date().addingTimeInterval(seconds)
             c.bump()
         }
+        setTickRate(hot: true)
     }
 
     func tick() {
@@ -1823,10 +1888,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Shelf.draggingOut = false
         }
         // Entries dragged *out* of the shelf don't count: the layout must stay put under them.
-        let types = dragPB.types ?? []
-        let fileDrag = mouseDown && !Shelf.draggingOut && dragPB.changeCount != idleDragCount
-            && (types.contains(.fileURL) || types.contains(.URL) || types.contains(.string))
+        // The type list is only fetched once a drag has really started (it's a round trip
+        // to the pasteboard server).
+        var fileDrag = false
+        if mouseDown && !Shelf.draggingOut && dragPB.changeCount != idleDragCount {
+            let types = dragPB.types ?? []
+            fileDrag = types.contains(.fileURL) || types.contains(.URL) || types.contains(.string)
+        }
         controllers.forEach { $0.tick(fileDrag: fileDrag, np: np, shelf: shelf, foco: foco) }
+        let mouse = NSEvent.mouseLocation
+        setTickRate(hot: mouseDown || controllers.contains(where: { $0.isHot(mouse) }))
     }
 }
 
