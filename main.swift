@@ -100,9 +100,9 @@ enum Strings {
         "launchAtLogin": ["en": "Open at login", "pt": "Abrir ao iniciar sessão", "es": "Abrir al iniciar sesión"],
         // Settings window
         "welcomeTitle": ["en": "Welcome to NotchUser", "pt": "Bem-vindo ao NotchUser", "es": "Bienvenido a NotchUser"],
-        "welcomeSub": ["en": "Music, a file shelf and your focus timer, right in the notch.",
-                       "pt": "Música, uma prateleira de arquivos e seu timer de foco, direto no notch.",
-                       "es": "Música, un estante de archivos y tu temporizador de enfoque, justo en el notch."],
+        "welcomeSub": ["en": "Your music and a file shelf, right in the notch.",
+                       "pt": "Sua música e uma prateleira de arquivos, direto no notch.",
+                       "es": "Tu música y un estante de archivos, justo en el notch."],
         "settingsTitle": ["en": "NotchUser Settings", "pt": "Ajustes do NotchUser", "es": "Ajustes de NotchUser"],
         "language": ["en": "Language", "pt": "Idioma", "es": "Idioma"],
         "langSystem": ["en": "System", "pt": "Sistema", "es": "Sistema"],
@@ -1529,7 +1529,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 9) {
                     Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
                     Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
-                    Toggle(L("showFoco"), isOn: $settings.showFoco)
+                    // Only for people who have the Foco study-timer app.
+                    if appURL(FocoTimer.bundleID) != nil {
+                        Toggle(L("showFoco"), isOn: $settings.showFoco)
+                    }
                     Toggle(L("launchAtLogin"), isOn: Binding(
                         get: { SMAppService.mainApp.status == .enabled },
                         set: { on in

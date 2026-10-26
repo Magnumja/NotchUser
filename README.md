@@ -4,7 +4,7 @@
 
 
 <p align="center">
-  Música, timer de foco e uma prateleira de arquivos no notch do seu Mac.<br>
+  Sua música e uma prateleira de arquivos no notch do seu Mac.<br>
   Nativo, leve, gratuito e de código aberto.
 </p>
 
@@ -21,7 +21,6 @@
 - **Prateleira.** Arraste arquivos, links ou texto até o notch para guardar; depois arraste para onde quiser (WhatsApp, e-mail, Finder…). Selecione vários e arraste todos juntos, ou mande por AirDrop.
 - **Telas externas.** Em monitores sem notch aparece uma pílula no topo com tudo isso.
 - **Avisos discretos.** Quando a música troca, o notch abre por alguns segundos e dá um "pulinho".
-- **Timer do [Foco](#integração-com-o-foco)**, se você usa o app Foco.
 - **Português, English e Español.** Escolha o idioma na tela de boas-vindas ou deixe seguir o idioma do Mac.
 
 ## Instalar
@@ -69,10 +68,6 @@ Arquivos:
 Desde o macOS 15.4 a Apple só deixa os próprios apps dela lerem o "Tocando agora" do sistema (o framework privado MediaRemote). O NotchUser usa o mesmo truque de outros apps de notch: um pequeno helper (`helper.m`) é carregado pelo `/usr/bin/perl`, que é assinado pela Apple, e repassa título, artista, tempo e capa para o app. Ele não mexe em nenhuma configuração do sistema.
 
 **Aviso:** é um caminho não oficial e a Apple pode fechá-lo numa atualização. Se isso acontecer, o NotchUser continua funcionando com Spotify e Apple Music (via AppleScript); só a parte do navegador para.
-
-## Integração com o Foco
-
-Se o app **Foco** estiver aberto com uma sessão de estudo, o notch mostra a contagem regressiva e a fase (estudo/pausa). Sem o Foco, nada muda.
 
 ## Licença
 
