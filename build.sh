@@ -4,7 +4,7 @@
 #   ./build.sh release   build dist/NotchUser.zip to share (does not install)
 set -e
 cd "$(dirname "$0")"
-VERSION=1.3.0
+VERSION=1.3.1
 BUNDLE_ID=io.github.notchuser
 MIN_MACOS=14.0
 
