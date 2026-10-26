@@ -8,6 +8,8 @@
   Nativo, leve, gratuito e de código aberto.
 </p>
 
+> 🐧 Usa Ubuntu ou outro Linux com GNOME? Tem a versão para a barra de cima: [NotchUser-Linux](https://github.com/Magnumja/NotchUser-Linux).
+
 ---
 
 <p align="center">
