@@ -4,7 +4,7 @@
 #   ./build.sh release   build dist/NotchUser.zip to share (does not install)
 set -e
 cd "$(dirname "$0")"
-VERSION=1.2.0
+VERSION=1.3.0
 BUNDLE_ID=io.github.notchuser
 MIN_MACOS=14.0
 
@@ -51,9 +51,22 @@ cat > $APP/Contents/Info.plist <<EOF
   <key>LSMinimumSystemVersion</key><string>$MIN_MACOS</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>LSUIElement</key><true/>
-  <key>NSAppleEventsUsageDescription</key><string>Para mostrar e controlar a música do Spotify e do Apple Music.</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>pt</string><string>es</string></array>
+  <key>NSAppleEventsUsageDescription</key><string>To show and control the music playing in Spotify and Apple Music.</string>
 </dict></plist>
 EOF
+# The macOS permission prompt in each language.
+typeset -A PERM_TEXT
+PERM_TEXT=(
+  en "To show and control the music playing in Spotify and Apple Music."
+  pt "Para mostrar e controlar a música do Spotify e do Apple Music."
+  es "Para mostrar y controlar la música de Spotify y Apple Music."
+)
+for LANG_CODE in en pt es; do
+  mkdir -p $APP/Contents/Resources/$LANG_CODE.lproj
+  echo "\"NSAppleEventsUsageDescription\" = \"$PERM_TEXT[$LANG_CODE]\";" > $APP/Contents/Resources/$LANG_CODE.lproj/InfoPlist.strings
+done
 codesign --force --sign - $APP
 
 if [ "${1:-}" = "release" ]; then

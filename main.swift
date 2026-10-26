@@ -4,6 +4,125 @@ import ServiceManagement
 import UniformTypeIdentifiers
 import QuickLookThumbnailing
 
+// MARK: - Settings & language
+
+final class Settings: ObservableObject {
+    static let shared = Settings()
+    static let screensChanged = Notification.Name("NotchUser.screensSettingChanged")
+
+    enum Language: String, CaseIterable, Identifiable {
+        case system, en, pt, es
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .system: return L("langSystem")
+            case .en: return "English"
+            case .pt: return "Português"
+            case .es: return "Español"
+            }
+        }
+    }
+
+    private let d = UserDefaults.standard
+    @Published var language: Language { didSet { d.set(language.rawValue, forKey: "language") } }
+    @Published var peekOnTrackChange: Bool { didSet { d.set(peekOnTrackChange, forKey: "peekOnTrackChange") } }
+    /// Pill at the top of displays without a notch (external monitors).
+    @Published var showOnAllScreens: Bool {
+        didSet {
+            d.set(showOnAllScreens, forKey: "showOnAllScreens")
+            NotificationCenter.default.post(name: Self.screensChanged, object: nil)
+        }
+    }
+    @Published var showFoco: Bool { didSet { d.set(showFoco, forKey: "showFoco") } }
+    var onboarded: Bool {
+        get { d.bool(forKey: "onboarded") }
+        set { d.set(newValue, forKey: "onboarded") }
+    }
+
+    private init() {
+        language = Language(rawValue: d.string(forKey: "language") ?? "") ?? .system
+        peekOnTrackChange = d.object(forKey: "peekOnTrackChange") as? Bool ?? true
+        showOnAllScreens = d.object(forKey: "showOnAllScreens") as? Bool ?? true
+        showFoco = d.object(forKey: "showFoco") as? Bool ?? true
+    }
+
+    /// The language actually used: the chosen one, or the Mac's if it is one we have.
+    var resolved: String {
+        if language != .system { return language.rawValue }
+        let mac = Locale.preferredLanguages.first.map { String($0.prefix(2)) } ?? "en"
+        return Strings.supported.contains(mac) ? mac : "en"
+    }
+}
+
+/// Localized string for `key`, formatted with `args` (%ld for numbers, %@ for text).
+func L(_ key: String, _ args: CVarArg...) -> String {
+    let table = Strings.all[key]
+    let s = table?[Settings.shared.resolved] ?? table?["en"] ?? key
+    return args.isEmpty ? s : String(format: s, arguments: args)
+}
+
+enum Strings {
+    static let supported = ["en", "pt", "es"]
+    static let all: [String: [String: String]] = [
+        // Notch
+        "nothingPlaying": ["en": "Nothing playing", "pt": "Nada tocando", "es": "No suena nada"],
+        "dragHint": ["en": "Drag files, links or text here", "pt": "Arraste arquivos, links ou texto até aqui", "es": "Arrastra archivos, enlaces o texto aquí"],
+        "dropHere": ["en": "Drop here to keep it", "pt": "Solte aqui pra guardar", "es": "Suelta aquí para guardarlo"],
+        "releaseNow": ["en": "Drop it", "pt": "Pode soltar", "es": "Suéltalo"],
+        "alreadyOnShelf": ["en": "%ld already on the shelf", "pt": "%ld já na prateleira", "es": "%ld ya en el estante"],
+        "clearShelf": ["en": "Clear shelf", "pt": "Limpar prateleira", "es": "Vaciar estante"],
+        "removeSelected": ["en": "Remove the %ld selected", "pt": "Tirar os %ld selecionados", "es": "Quitar los %ld seleccionados"],
+        "break": ["en": "Break", "pt": "Pausa", "es": "Descanso"],
+        "focusCycle": ["en": "Focus · cycle %ld of %ld", "pt": "Foco · ciclo %ld de %ld", "es": "Enfoque · ciclo %ld de %ld"],
+        "openFoco": ["en": "Open Foco", "pt": "Abrir o Foco", "es": "Abrir Foco"],
+        "openApp": ["en": "Open %@", "pt": "Abrir %@", "es": "Abrir %@"],
+        "showApp": ["en": "Show %@", "pt": "Mostrar %@", "es": "Mostrar %@"],
+        "openToControl": ["en": "Open %@ to control it", "pt": "Abra %@ para controlar", "es": "Abre %@ para controlarlo"],
+        // Shelf item menu
+        "text": ["en": "Text", "pt": "Texto", "es": "Texto"],
+        "open": ["en": "Open", "pt": "Abrir", "es": "Abrir"],
+        "openN": ["en": "Open %ld items", "pt": "Abrir %ld itens", "es": "Abrir %ld elementos"],
+        "copyText": ["en": "Copy text", "pt": "Copiar texto", "es": "Copiar texto"],
+        "showInFinder": ["en": "Show in Finder", "pt": "Mostrar no Finder", "es": "Mostrar en Finder"],
+        "copy": ["en": "Copy", "pt": "Copiar", "es": "Copiar"],
+        "copyN": ["en": "Copy %ld items", "pt": "Copiar %ld itens", "es": "Copiar %ld elementos"],
+        "airdrop": ["en": "AirDrop…", "pt": "AirDrop…", "es": "AirDrop…"],
+        "selectAll": ["en": "Select all", "pt": "Selecionar tudo", "es": "Seleccionar todo"],
+        "deselect": ["en": "Deselect", "pt": "Desmarcar", "es": "Deseleccionar"],
+        "removeFromShelf": ["en": "Remove from shelf", "pt": "Tirar da prateleira", "es": "Quitar del estante"],
+        "removeN": ["en": "Remove %ld from shelf", "pt": "Tirar %ld da prateleira", "es": "Quitar %ld del estante"],
+        // Notch right-click menu
+        "settings": ["en": "Settings…", "pt": "Ajustes…", "es": "Ajustes…"],
+        "quit": ["en": "Quit NotchUser", "pt": "Sair do NotchUser", "es": "Salir de NotchUser"],
+        "peekOnTrack": ["en": "Show when the song changes", "pt": "Mostrar ao trocar de música", "es": "Mostrar al cambiar de canción"],
+        "otherScreens": ["en": "Show on other displays", "pt": "Mostrar em outras telas", "es": "Mostrar en otras pantallas"],
+        "showFoco": ["en": "Show the Foco timer", "pt": "Mostrar o timer do Foco", "es": "Mostrar el temporizador de Foco"],
+        "launchAtLogin": ["en": "Open at login", "pt": "Abrir ao iniciar sessão", "es": "Abrir al iniciar sesión"],
+        // Settings window
+        "welcomeTitle": ["en": "Welcome to NotchUser", "pt": "Bem-vindo ao NotchUser", "es": "Bienvenido a NotchUser"],
+        "welcomeSub": ["en": "Music, a file shelf and your focus timer, right in the notch.",
+                       "pt": "Música, uma prateleira de arquivos e seu timer de foco, direto no notch.",
+                       "es": "Música, un estante de archivos y tu temporizador de enfoque, justo en el notch."],
+        "settingsTitle": ["en": "NotchUser Settings", "pt": "Ajustes do NotchUser", "es": "Ajustes de NotchUser"],
+        "language": ["en": "Language", "pt": "Idioma", "es": "Idioma"],
+        "langSystem": ["en": "System", "pt": "Sistema", "es": "Sistema"],
+        "permissions": ["en": "Permissions", "pt": "Permissões", "es": "Permisos"],
+        "permHint": ["en": "Needed to show and control Spotify and Apple Music. Music in the browser works without it.",
+                     "pt": "Necessário para mostrar e controlar o Spotify e o Apple Music. A música do navegador funciona sem isso.",
+                     "es": "Necesario para mostrar y controlar Spotify y Apple Music. La música del navegador funciona sin esto."],
+        "allowed": ["en": "Allowed", "pt": "Permitido", "es": "Permitido"],
+        "allow": ["en": "Allow", "pt": "Permitir", "es": "Permitir"],
+        "openSettings": ["en": "Open Settings", "pt": "Abrir Ajustes", "es": "Abrir Ajustes"],
+        "notInstalled": ["en": "Not installed", "pt": "Não instalado", "es": "No instalado"],
+        "behavior": ["en": "Behavior", "pt": "Comportamento", "es": "Comportamiento"],
+        "tip": ["en": "Hover the notch to open it. Right-click it for options and Settings.",
+                "pt": "Passe o mouse no notch pra abrir. Clique com o botão direito pra ver opções e Ajustes.",
+                "es": "Pasa el ratón por el notch para abrirlo. Haz clic derecho para ver opciones y Ajustes."],
+        "getStarted": ["en": "Get started", "pt": "Começar", "es": "Empezar"],
+        "done": ["en": "Done", "pt": "Pronto", "es": "Listo"],
+    ]
+}
+
 // MARK: - Now playing
 //
 // Two inputs feed a list of sources (one per app):
@@ -385,6 +504,7 @@ final class FocoTimer: ObservableObject {
         let data = CFPreferencesCopyAppValue("foco.activeSession" as CFString, domain) as? Data
         // A session left behind by a Foco that is no longer running is stale.
         let running = !NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleID).isEmpty
+            && Settings.shared.showFoco
         let new = running ? data.flatMap { try? JSONDecoder().decode(Session.self, from: $0) } : nil
         guard new != session else { return }
         let phaseChanged = session != nil && new != nil && new?.isBreak != session?.isBreak
@@ -428,7 +548,7 @@ struct ShelfEntry: Codable, Hashable, Identifiable {
         case .link: return URL(string: value)?.host ?? value
         case .text:
             let firstLine = value.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines).first
-            return firstLine.flatMap { $0.isEmpty ? nil : $0 } ?? "Texto"
+            return firstLine.flatMap { $0.isEmpty ? nil : $0 } ?? L("text")
         }
     }
 
@@ -602,19 +722,6 @@ final class NotchState: ObservableObject {
     @Published var dropTargeted = false  // ...and it is over the notch
     @Published var bump = false          // brief squash-and-stretch when something new arrives
 
-    static var peekOnTrackChange: Bool {
-        get { UserDefaults.standard.object(forKey: "peekOnTrackChange") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "peekOnTrackChange") }
-    }
-    /// Pill at the top of displays without a notch (external monitors).
-    static var showOnAllScreens: Bool {
-        get { UserDefaults.standard.object(forKey: "showOnAllScreens") as? Bool ?? true }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "showOnAllScreens")
-            NotificationCenter.default.post(name: screensSettingChanged, object: nil)
-        }
-    }
-    static let screensSettingChanged = Notification.Name("NotchUser.screensSettingChanged")
     var notchW: CGFloat = 185
     var notchH: CGFloat = 32
     var side: CGFloat { notchH + 12 }
@@ -884,6 +991,7 @@ struct DragSource: NSViewRepresentable {
 struct ShelfItem: View {
     let entry: ShelfEntry
     @ObservedObject var shelf: Shelf
+    @ObservedObject var settings = Settings.shared
     @StateObject private var hover = Box<Bool>(false)
 
     private var selected: Bool { shelf.selection.contains(entry.id) }
@@ -929,7 +1037,7 @@ struct ShelfItem: View {
                 }
                 .buttonStyle(.plain)
                 .offset(x: 2, y: -2)
-                .help("Tirar da prateleira")
+                .help(L("removeFromShelf"))
             }
         }
         .help(entry.kind == .text ? entry.value : entry.title)
@@ -961,23 +1069,23 @@ struct ShelfItem: View {
         let group = shelf.group(for: entry)
         let many = group.count > 1
         let m = NSMenu()
-        let openTitle = many ? "Abrir \(group.count) itens" : entry.kind == .text ? "Copiar texto" : "Abrir"
+        let openTitle = many ? L("openN", group.count) : entry.kind == .text ? L("copyText") : L("open")
         m.addItem(ClosureMenuItem(openTitle) { group.forEach(shelf.open) })
         if entry.kind == .file && !many {
             let url = URL(fileURLWithPath: entry.value)
-            m.addItem(ClosureMenuItem("Mostrar no Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) })
+            m.addItem(ClosureMenuItem(L("showInFinder")) { NSWorkspace.shared.activateFileViewerSelecting([url]) })
         }
-        m.addItem(ClosureMenuItem(many ? "Copiar \(group.count) itens" : "Copiar") { shelf.copy(group) })
-        m.addItem(ClosureMenuItem("AirDrop…") { shelf.airDrop(group) })
+        m.addItem(ClosureMenuItem(many ? L("copyN", group.count) : L("copy")) { shelf.copy(group) })
+        m.addItem(ClosureMenuItem(L("airdrop")) { shelf.airDrop(group) })
         m.addItem(.separator())
         if shelf.selection.count < shelf.items.count {
-            m.addItem(ClosureMenuItem("Selecionar tudo") { shelf.selection = Set(shelf.items.map(\.id)) })
+            m.addItem(ClosureMenuItem(L("selectAll")) { shelf.selection = Set(shelf.items.map(\.id)) })
         }
         if !shelf.selection.isEmpty {
-            m.addItem(ClosureMenuItem("Desmarcar") { shelf.selection.removeAll() })
+            m.addItem(ClosureMenuItem(L("deselect")) { shelf.selection.removeAll() })
         }
         m.addItem(.separator())
-        m.addItem(ClosureMenuItem(many ? "Tirar \(group.count) da prateleira" : "Tirar da prateleira") {
+        m.addItem(ClosureMenuItem(many ? L("removeN", group.count) : L("removeFromShelf")) {
             withAnimation(.spring(response: 0.3)) { shelf.remove(Set(group.map(\.id))) }
         })
         return m
@@ -989,6 +1097,7 @@ struct NotchView: View {
     @ObservedObject var ui: NotchState
     @ObservedObject var shelf: Shelf
     @ObservedObject var foco: FocoTimer
+    @ObservedObject var settings = Settings.shared
 
     var body: some View {
         let hasMedia = np.hasMedia
@@ -1060,18 +1169,17 @@ struct NotchView: View {
         .animation(.spring(response: 0.38, dampingFraction: 0.8), value: ui.expandedSize.height)
         .contextMenu {
             if !shelf.isEmpty {
-                Button("Limpar prateleira") { shelf.clear() }
+                Button(L("clearShelf")) { shelf.clear() }
                 Divider()
             }
-            Toggle("Mostrar ao trocar de música", isOn: Binding(
-                get: { NotchState.peekOnTrackChange }, set: { NotchState.peekOnTrackChange = $0 }))
-            Toggle("Mostrar em outras telas", isOn: Binding(
-                get: { NotchState.showOnAllScreens }, set: { NotchState.showOnAllScreens = $0 }))
-            Toggle("Abrir ao iniciar sessão", isOn: Binding(
+            Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
+            Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
+            Toggle(L("launchAtLogin"), isOn: Binding(
                 get: { SMAppService.mainApp.status == .enabled },
                 set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
             Divider()
-            Button("Sair") { NSApp.terminate(nil) }
+            Button(L("settings")) { SettingsWindow.shared.show(welcome: false) }
+            Button(L("quit")) { NSApp.terminate(nil) }
         }
     }
 
@@ -1130,7 +1238,7 @@ struct NotchView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PressStyle(hover: false))
-                .help(selected ? "Abrir \(appName(s.bundleID))" : "Mostrar \(appName(s.bundleID))")
+                .help(selected ? L("openApp", appName(s.bundleID)) : L("showApp", appName(s.bundleID)))
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: np.bundleID)
@@ -1161,7 +1269,7 @@ struct NotchView: View {
                     }
                     .frame(width: 32, height: 32)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(s.isBreak ? "Pausa" : "Foco · ciclo \(s.cycle) de \(s.totalCycles)")
+                        Text(s.isBreak ? L("break") : L("focusCycle", s.cycle, s.totalCycles))
                             .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                         if !s.intention.isEmpty {
                             Text(s.intention).font(.system(size: 11.5)).foregroundColor(.white.opacity(0.55))
@@ -1180,7 +1288,7 @@ struct NotchView: View {
         .frame(height: NotchState.focusHeight)
         .contentShape(Rectangle())
         .onTapGesture { foco.open() }
-        .help("Abrir o Foco")
+        .help(L("openFoco"))
     }
 
     private var mediaSection: some View {
@@ -1228,7 +1336,7 @@ struct NotchView: View {
                 // The system only lets us control the app it is currently reporting.
                 .disabled(!np.canControl)
                 .opacity(np.canControl ? 1 : 0.35)
-                .help(np.canControl ? "" : "Abra \(appName(np.bundleID ?? "")) para controlar")
+                .help(np.canControl ? "" : L("openToControl", appName(np.bundleID ?? "")))
                 Spacer()
                 sourceSwitcher.frame(width: 96, alignment: .trailing)
             }
@@ -1244,9 +1352,9 @@ struct NotchView: View {
                 .font(.system(size: 20, weight: .semibold))
                 .symbolEffect(.bounce, value: on)
             VStack(alignment: .leading, spacing: 1) {
-                Text(on ? "Pode soltar" : "Solte aqui pra guardar").font(.system(size: 13, weight: .semibold))
+                Text(on ? L("releaseNow") : L("dropHere")).font(.system(size: 13, weight: .semibold))
                 if !shelf.isEmpty {
-                    Text("\(shelf.items.count) já na prateleira").font(.system(size: 11)).opacity(0.6)
+                    Text(L("alreadyOnShelf", shelf.items.count)).font(.system(size: 11)).opacity(0.6)
                 }
             }
         }
@@ -1278,7 +1386,7 @@ struct NotchView: View {
                             shelf.selection.isEmpty ? shelf.clear() : shelf.remove(shelf.selection)
                         }
                     }
-                    .help(shelf.selection.isEmpty ? "Limpar prateleira" : "Tirar os \(shelf.selection.count) selecionados")
+                    .help(shelf.selection.isEmpty ? L("clearShelf") : L("removeSelected", shelf.selection.count))
                 }
                 .padding(6)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
@@ -1300,9 +1408,9 @@ struct NotchView: View {
             }
             if ui.isEmpty {
                 VStack(spacing: 4) {
-                    Label("Nada tocando", systemImage: "music.note")
+                    Label(L("nothingPlaying"), systemImage: "music.note")
                         .font(.system(size: 13, weight: .medium)).foregroundColor(.white.opacity(0.55))
-                    Text("Arraste arquivos, links ou texto até aqui")
+                    Text(L("dragHint"))
                         .font(.system(size: 11)).foregroundColor(.white.opacity(0.35))
                 }
                 .frame(height: NotchState.emptyHeight)
@@ -1312,6 +1420,228 @@ struct NotchView: View {
         .padding(.horizontal, NotchState.hPad)
         .padding(.bottom, 10)
         .frame(width: ui.expandedSize.width, height: ui.expandedSize.height, alignment: .top)
+    }
+}
+
+// MARK: - Settings window
+
+/// Automation permission (Apple Events) for the players we script.
+final class Permissions: ObservableObject {
+    enum State { case notInstalled, granted, denied, ask }
+    @Published private(set) var states: [String: State] = [:]
+    private let queue = DispatchQueue(label: "notch.permissions")
+    private var timer: Timer?
+
+    func start() {
+        refresh()
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
+    }
+
+    func stop() { timer?.invalidate(); timer = nil }
+
+    private static func check(_ bundleID: String, ask: Bool) -> State {
+        guard appURL(bundleID) != nil else { return .notInstalled }
+        let target = NSAppleEventDescriptor(bundleIdentifier: bundleID)
+        switch AEDeterminePermissionToAutomateTarget(target.aeDesc, typeWildCard, typeWildCard, ask) {
+        case noErr: return .granted
+        case OSStatus(errAEEventNotPermitted): return .denied
+        default: return .ask  // not decided yet, or the app isn't running so we can't tell
+        }
+    }
+
+    func refresh() {
+        queue.async {
+            var s: [String: State] = [:]
+            for p in Player.allCases { s[p.bundleID] = Self.check(p.bundleID, ask: false) }
+            DispatchQueue.main.async { self.states = s }
+        }
+    }
+
+    /// macOS only asks while the target app is running, so open it quietly first if needed.
+    func request(_ bundleID: String) {
+        let running = !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
+        if !running, let url = appURL(bundleID) {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = false
+            NSWorkspace.shared.openApplication(at: url, configuration: config)
+        }
+        queue.asyncAfter(deadline: .now() + (running ? 0 : 2.5)) {
+            _ = Self.check(bundleID, ask: true)
+            self.refresh()
+        }
+    }
+
+    func openSystemSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+struct SettingsView: View {
+    var welcome: Bool
+    var onDone: () -> Void
+    @ObservedObject var settings = Settings.shared
+    @ObservedObject var perms: Permissions
+
+    var body: some View {
+        VStack(spacing: 14) {
+            VStack(spacing: 6) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 64, height: 64)
+                    .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
+                Text(welcome ? L("welcomeTitle") : L("settingsTitle"))
+                    .font(.system(size: 21, weight: .bold))
+                if welcome {
+                    Text(L("welcomeSub"))
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.top, 24)
+
+            section(L("language")) {
+                Picker("", selection: $settings.language) {
+                    ForEach(Settings.Language.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            section(L("permissions")) {
+                VStack(spacing: 10) {
+                    ForEach(Player.allCases, id: \.self) { p in
+                        permissionRow(p)
+                        if p != Player.allCases.last { Divider().opacity(0.5) }
+                    }
+                    Text(L("permHint"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            section(L("behavior")) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
+                    Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
+                    Toggle(L("showFoco"), isOn: $settings.showFoco)
+                    Toggle(L("launchAtLogin"), isOn: Binding(
+                        get: { SMAppService.mainApp.status == .enabled },
+                        set: { on in
+                            try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+                            settings.objectWillChange.send()
+                        }))
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.system(size: 13))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Text(L("tip"))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: onDone) {
+                Text(welcome ? L("getStarted") : L("done"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(.horizontal, 26)
+        .padding(.bottom, 20)
+        .frame(width: 440)
+        .background(VisualEffect(material: .hudWindow).ignoresSafeArea())
+        .environment(\.colorScheme, .dark)
+        .animation(.easeInOut(duration: 0.2), value: settings.language)
+    }
+
+    /// A frosted group with a small caption, like the panes in System Settings.
+    private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.leading, 4)
+            content()
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.04)],
+                                                 startPoint: .top, endPoint: .bottom), lineWidth: 0.7))
+        }
+    }
+
+    private func permissionRow(_ p: Player) -> some View {
+        HStack(spacing: 10) {
+            Group {
+                if let icon = appIcon(p.bundleID) { Image(nsImage: icon).resizable() }
+                else { Image(systemName: "music.note") }
+            }
+            .frame(width: 26, height: 26)
+            Text(p == .music ? "Apple Music" : "Spotify").font(.system(size: 13, weight: .medium))
+            Spacer()
+            switch perms.states[p.bundleID] ?? .ask {
+            case .notInstalled:
+                Text(L("notInstalled")).font(.system(size: 12)).foregroundColor(.secondary)
+            case .granted:
+                Label(L("allowed"), systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.green)
+            case .denied:
+                Button(L("openSettings")) { perms.openSystemSettings() }.controlSize(.small)
+            case .ask:
+                Button(L("allow")) { perms.request(p.bundleID) }.controlSize(.small)
+            }
+        }
+    }
+}
+
+/// Centered, translucent window: the welcome screen on first launch, Settings afterwards.
+final class SettingsWindow: NSObject, NSWindowDelegate {
+    static let shared = SettingsWindow()
+    private var window: NSWindow?
+    private let perms = Permissions()
+
+    func show(welcome: Bool) {
+        if window == nil {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 600),
+                             styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.isMovableByWindowBackground = true
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.appearance = NSAppearance(named: .darkAqua)
+            w.isReleasedWhenClosed = false
+            w.delegate = self
+            window = w
+        }
+        guard let w = window else { return }
+        let controller = NSHostingController(rootView: SettingsView(welcome: welcome, onDone: { [weak self] in self?.window?.close() }, perms: perms))
+        // Fixed width, height measured from the content.
+        let fit = controller.sizeThatFits(in: CGSize(width: 440, height: 2000))
+        w.contentViewController = controller
+        w.setContentSize(NSSize(width: 440, height: fit.height))
+        w.center()
+        perms.start()
+        NSApp.activate(ignoringOtherApps: true)
+        w.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        perms.stop()
+        Settings.shared.onboarded = true
     }
 }
 
@@ -1436,11 +1766,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         rebuild()
-        for name in [NSApplication.didChangeScreenParametersNotification, NotchState.screensSettingChanged] {
+        for name in [NSApplication.didChangeScreenParametersNotification, Settings.screensChanged] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.rebuild() }
         }
         np.onTrackChange = { [weak self] in
-            guard NotchState.peekOnTrackChange else { return }
+            guard Settings.shared.peekOnTrackChange else { return }
             self?.peek(3)
         }
         // Study <-> break switches peek open like a notification.
@@ -1451,12 +1781,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         np.start()
         foco.start()
+        if !Settings.shared.onboarded { SettingsWindow.shared.show(welcome: true) }
         hoverTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.tick() }
     }
 
     /// Keeps one controller per display that should show the notch.
     func rebuild() {
-        let screens = NSScreen.screens.filter { $0.hasNotch || NotchState.showOnAllScreens }
+        let screens = NSScreen.screens.filter { $0.hasNotch || Settings.shared.showOnAllScreens }
         controllers.removeAll { c in
             guard !screens.contains(where: { $0.displayID == c.displayID }) else { return false }
             c.close()

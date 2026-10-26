@@ -10,7 +10,9 @@
 
 ---
 
-<!-- Coloque aqui um print ou GIF do notch aberto: ![NotchUser](Assets/screenshot.png) -->
+<p align="center">
+  <img src="Assets/demo.gif" width="760" alt="NotchUser em uso: o notch abre com a música tocando">
+</p>
 
 ## O que ele faz
 
@@ -20,6 +22,7 @@
 - **Telas externas.** Em monitores sem notch aparece uma pílula no topo com tudo isso.
 - **Avisos discretos.** Quando a música troca, o notch abre por alguns segundos e dá um "pulinho".
 - **Timer do [Foco](#integração-com-o-foco)**, se você usa o app Foco.
+- **Português, English e Español.** Escolha o idioma na tela de boas-vindas ou deixe seguir o idioma do Mac.
 
 ## Instalar
 
@@ -30,9 +33,9 @@
    ```bash
    xattr -dr com.apple.quarantine /Applications/NotchUser.app
    ```
-4. Quando o macOS perguntar se o NotchUser pode controlar o Spotify/Música, clique em **Permitir**.
+4. Na **tela de boas-vindas**, escolha o idioma e clique em **Permitir** ao lado do Spotify e do Apple Music (é o que deixa o app mostrar e controlar a música deles). Ali também dá para ligar **Abrir ao iniciar sessão**.
 
-Para abrir junto com o Mac: botão direito no notch → **Abrir ao iniciar sessão**.
+Para voltar a essa tela depois: botão direito no notch → **Ajustes…**.
 
 Requisitos: macOS 14 (Sonoma) ou mais novo, Apple Silicon ou Intel.
 
@@ -40,7 +43,7 @@ Requisitos: macOS 14 (Sonoma) ou mais novo, Apple Silicon ou Intel.
 
 | Onde | O que fazer |
 | --- | --- |
-| Notch | Passe o mouse para abrir · botão direito para opções e **Sair** |
+| Notch | Passe o mouse para abrir · botão direito para opções, **Ajustes…** e **Sair** |
 | Capa do álbum | Clique para abrir o app que está tocando |
 | Ícones no canto do player | Trocar entre Spotify, navegador, Música… |
 | Prateleira | Clique para selecionar · dois cliques para abrir · arraste para fora · botão direito para Copiar, AirDrop, Mostrar no Finder |
@@ -59,6 +62,7 @@ Arquivos:
 - `main.swift`: o app inteiro (SwiftUI + AppKit).
 - `helper.m`: lê o "Tocando agora" do sistema (veja abaixo).
 - `Tools/make_icon.swift`: gera o ícone do app a partir de `Assets/logo.png`.
+- `Tools/make_gif.swift`: transforma uma gravação de tela no GIF deste README.
 
 ## Como ele lê a música do navegador
 
