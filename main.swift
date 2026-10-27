@@ -49,13 +49,16 @@ final class Settings: ObservableObject {
         }
     }
     static let audioChanged = Notification.Name("NotchUser.audioSettingChanged")
-    /// Global ⌘⇧2 shortcut to copy text from the screen.
-    @Published var ocrHotkey: Bool {
+    // Add-ons: the app ships with music and the shelf; these are off until turned on.
+    /// Copy text from the screen (⌘⇧2).
+    @Published var ocrEnabled: Bool {
         didSet {
-            d.set(ocrHotkey, forKey: "ocrHotkey")
+            d.set(ocrEnabled, forKey: "ocrEnabled")
             NotificationCenter.default.post(name: Self.ocrChanged, object: nil)
         }
     }
+    /// Camera mirror in the notch.
+    @Published var mirrorEnabled: Bool { didSet { d.set(mirrorEnabled, forKey: "mirrorEnabled") } }
     static let ocrChanged = Notification.Name("NotchUser.ocrSettingChanged")
     var onboarded: Bool {
         get { d.bool(forKey: "onboarded") }
@@ -68,7 +71,8 @@ final class Settings: ObservableObject {
         showOnAllScreens = d.object(forKey: "showOnAllScreens") as? Bool ?? true
         showFoco = d.object(forKey: "showFoco") as? Bool ?? true
         keepHeadphonesHQ = d.bool(forKey: "keepHeadphonesHQ")
-        ocrHotkey = d.object(forKey: "ocrHotkey") as? Bool ?? true
+        ocrEnabled = d.bool(forKey: "ocrEnabled")
+        mirrorEnabled = d.bool(forKey: "mirrorEnabled")
     }
 
     /// The language actually used: the chosen one, or the Mac's if it is one we have.
@@ -142,7 +146,12 @@ enum Strings {
         "screenRecordingHint": ["en": "Only to copy text from the screen; the image is deleted right after reading.",
                                 "pt": "Só pra copiar texto da tela; a imagem é apagada logo depois da leitura.",
                                 "es": "Solo para copiar texto de la pantalla; la imagen se borra justo después de leerla."],
-        "ocrShortcut": ["en": "⌘⇧2 copies text from the screen", "pt": "⌘⇧2 copia texto da tela", "es": "⌘⇧2 copia texto de la pantalla"],
+        "addons": ["en": "Add-ons", "pt": "Complementos", "es": "Complementos"],
+        "addonsSub": ["en": "Optional extras. Turn them on now or anytime in Settings or the notch menu.",
+                      "pt": "Extras opcionais. Ligue agora ou quando quiser, nos Ajustes ou no menu do notch.",
+                      "es": "Extras opcionales. Actívalos ahora o cuando quieras en Ajustes o en el menú del notch."],
+        "addonOCR": ["en": "Copy text from the screen (⌘⇧2)", "pt": "Copiar texto da tela (⌘⇧2)", "es": "Copiar texto de la pantalla (⌘⇧2)"],
+        "addonMirror": ["en": "Camera mirror", "pt": "Espelho de câmera", "es": "Espejo de cámara"],
         "cameraMirror": ["en": "Camera mirror", "pt": "Espelho de câmera", "es": "Espejo de cámara"],
         "camera": ["en": "Camera", "pt": "Câmera", "es": "Cámara"],
         "cameraDenied": ["en": "Allow camera access in System Settings to use the mirror.",
@@ -1027,9 +1036,12 @@ final class CameraMirror: ObservableObject {
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "notch.camera")
     private var configured = false  // touched on `queue` only
+    private let log = Logger(subsystem: "io.github.notchuser", category: "camera")
+    lazy var previewView = CameraPreviewView(session: session)
     private var wanted = false
 
     func start() {
+        log.notice("start (state \(String(describing: self.state), privacy: .public))")
         wanted = true
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
@@ -1070,6 +1082,7 @@ final class CameraMirror: ObservableObject {
                 configured = true
             }
             session.startRunning()
+            log.notice("session running: \(self.session.isRunning, privacy: .public)")
             DispatchQueue.main.async {
                 // Closed while the camera was warming up: turn it right back off.
                 if self.wanted {
@@ -1082,6 +1095,7 @@ final class CameraMirror: ObservableObject {
     }
 
     func stop() {
+        log.notice("stop")
         wanted = false
         if state == .running || state == .starting { state = .off }
         queue.async { [self] in
@@ -1137,9 +1151,11 @@ final class CameraPreviewView: NSView {
     }
 }
 
+/// Hands SwiftUI the camera's single preview view. A fresh preview layer per opening could be
+/// created while the previous one was still attached to the session, leaving it blank.
 struct CameraPreview: NSViewRepresentable {
-    let session: AVCaptureSession
-    func makeNSView(context: Context) -> CameraPreviewView { CameraPreviewView(session: session) }
+    let camera: CameraMirror
+    func makeNSView(context: Context) -> CameraPreviewView { camera.previewView }
     func updateNSView(_ view: CameraPreviewView, context: Context) {}
 }
 
@@ -1625,18 +1641,24 @@ struct NotchView: View {
             }
             Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
             Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
-            Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
-                .help(L("headphonesHQHint"))
-            Toggle(L("ocrShortcut"), isOn: $settings.ocrHotkey)
             Toggle(L("launchAtLogin"), isOn: Binding(
                 get: { SMAppService.mainApp.status == .enabled },
                 set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
-            Divider()
-            Button("\(L("copyTextFromScreen"))  ⌘⇧2") {
-                // Let the menu close before the selection crosshair appears.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ScreenText.shared.capture() }
+            Menu(L("addons")) {
+                Toggle(L("addonOCR"), isOn: $settings.ocrEnabled)
+                Toggle(L("addonMirror"), isOn: $settings.mirrorEnabled)
+                Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
             }
-            Button(L("cameraMirror")) { ui.mirrorOn = true }
+            Divider()
+            if settings.ocrEnabled {
+                Button("\(L("copyTextFromScreen"))  ⌘⇧2") {
+                    // Let the menu close before the selection crosshair appears.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ScreenText.shared.capture() }
+                }
+            }
+            if settings.mirrorEnabled {
+                Button(L("cameraMirror")) { ui.mirrorOn = true }
+            }
             Button(L("settings")) { SettingsWindow.shared.show(welcome: false) }
             Button(L("quit")) { NSApp.terminate(nil) }
         }
@@ -1779,8 +1801,10 @@ struct NotchView: View {
             }
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    ControlButton(symbol: "camera", size: 15, color: .white.opacity(0.7)) { ui.mirrorOn = true }
-                        .help(L("cameraMirror"))
+                    if settings.mirrorEnabled {
+                        ControlButton(symbol: "camera", size: 15, color: .white.opacity(0.7)) { ui.mirrorOn = true }
+                            .help(L("cameraMirror"))
+                    }
                     if np.isMusicApp {
                         ControlButton(symbol: np.favorited ? "heart.fill" : "heart", size: 17,
                                       color: np.favorited ? .pink : .white.opacity(0.7)) { np.toggleFavorite() }
@@ -1862,7 +1886,7 @@ struct NotchView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.05))
             switch camera.state {
             case .running, .starting:
-                CameraPreview(session: camera.session)
+                CameraPreview(camera: camera)
                 if camera.state == .starting { ProgressView().controlSize(.small) }
             case .denied:
                 VStack(spacing: 8) {
@@ -1927,6 +1951,7 @@ struct NotchView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { ui.mirrorOn.toggle() }
                 .help(L("cameraMirror"))
+                .allowsHitTesting(settings.mirrorEnabled)
         }
     }
 
@@ -1946,15 +1971,17 @@ struct NotchView: View {
                         .font(.system(size: 13, weight: .medium)).foregroundColor(.white.opacity(0.55))
                     Text(L("dragHint"))
                         .font(.system(size: 11)).foregroundColor(.white.opacity(0.35))
-                    Button { ui.mirrorOn = true } label: {
-                        Label(L("cameraMirror"), systemImage: "camera")
-                            .font(.system(size: 11, weight: .medium))
-                            .padding(.horizontal, 10).padding(.vertical, 4)
-                            .background(Capsule().fill(Color.white.opacity(0.1)))
+                    if settings.mirrorEnabled {
+                        Button { ui.mirrorOn = true } label: {
+                            Label(L("cameraMirror"), systemImage: "camera")
+                                .font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Capsule().fill(Color.white.opacity(0.1)))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.top, 4)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.white.opacity(0.8))
-                    .padding(.top, 4)
                 }
                 .frame(height: NotchState.emptyHeight)
             }
@@ -2060,20 +2087,48 @@ func glassSection<Content: View>(_ title: String, @ViewBuilder _ content: () -> 
     }
 }
 
+/// Optional extras, shared by the walkthrough, Settings and the notch menu's submenu.
+struct AddOnsList: View {
+    @ObservedObject var settings = Settings.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Toggle(L("addonOCR"), isOn: $settings.ocrEnabled)
+            Toggle(L("addonMirror"), isOn: $settings.mirrorEnabled)
+            Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
+                .help(L("headphonesHQHint"))
+            // Only for people who have the Foco study-timer app.
+            if appURL(FocoTimer.bundleID) != nil {
+                Toggle(L("showFoco"), isOn: $settings.showFoco)
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .font(.system(size: 13))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// One row per permission (players, camera, screen), shared by the walkthrough and Settings.
 struct PermissionsList: View {
     @ObservedObject var perms: Permissions
+    @ObservedObject var settings = Settings.shared
     var onScreenRequest: () -> Void = {}
 
+    // Camera and Screen Recording only show up when the add-on that needs them is on.
     var body: some View {
         VStack(spacing: 10) {
             ForEach(Player.allCases, id: \.self) { p in
+                if p != Player.allCases.first { Divider().opacity(0.5) }
                 playerRow(p)
-                Divider().opacity(0.5)
             }
-            cameraRow
-            Divider().opacity(0.5)
-            screenRow
+            if settings.mirrorEnabled {
+                Divider().opacity(0.5)
+                cameraRow
+            }
+            if settings.ocrEnabled {
+                Divider().opacity(0.5)
+                screenRow
+            }
         }
     }
 
@@ -2182,17 +2237,14 @@ struct SettingsView: View {
                 }
             }
 
+            glassSection(L("addons")) {
+                AddOnsList()
+            }
+
             glassSection(L("behavior")) {
                 VStack(alignment: .leading, spacing: 9) {
                     Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
                     Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
-                    Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
-                        .help(L("headphonesHQHint"))
-                    Toggle(L("ocrShortcut"), isOn: $settings.ocrHotkey)
-                    // Only for people who have the Foco study-timer app.
-                    if appURL(FocoTimer.bundleID) != nil {
-                        Toggle(L("showFoco"), isOn: $settings.showFoco)
-                    }
                     LaunchAtLoginToggle(settings: settings)
                 }
                 .toggleStyle(.switch)
@@ -2313,8 +2365,15 @@ struct OnboardingView: View {
                 .padding(.bottom, 4)
             feature("music.note", .pink, L("featMusic"), L("featMusicDesc"))
             feature("tray.full.fill", .blue, L("featShelf"), L("featShelfDesc"))
-            feature("text.viewfinder", .orange, L("featOCR"), L("featOCRDesc"))
-            feature("camera.fill", .green, L("featMirror"), L("featMirrorDesc"))
+            VStack(alignment: .leading, spacing: 6) {
+                glassSection(L("addons")) { AddOnsList() }
+                Text(L("addonsSub"))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+            .padding(.top, 6)
         }
     }
 
@@ -2358,9 +2417,6 @@ struct OnboardingView: View {
             glassSection(L("behavior")) {
                 VStack(alignment: .leading, spacing: 9) {
                     LaunchAtLoginToggle(settings: settings)
-                    Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
-                        .help(L("headphonesHQHint"))
-                    Toggle(L("ocrShortcut"), isOn: $settings.ocrHotkey)
                 }
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -2369,7 +2425,9 @@ struct OnboardingView: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 Label(L("tipHover"), systemImage: "cursorarrow.motionlines")
-                Label(L("tipOCR"), systemImage: "text.viewfinder")
+                if settings.ocrEnabled {
+                    Label(L("tipOCR"), systemImage: "text.viewfinder")
+                }
                 Label(L("tipMenu"), systemImage: "contextualmenu.and.cursorarrow")
             }
             .font(.system(size: 12.5))
@@ -2605,8 +2663,8 @@ final class NotchController {
         if ui.toast != nil && now >= toastUntil { ui.toast = nil }
         let want = hovering || dragNear || camera.asking || now < mirrorHoldUntil || now < toastUntil
             || (now < peekUntil && (np.hasMedia || foco.session != nil))
-        // Dragging a file in needs the drop zone, not the mirror.
-        if fileDrag && ui.mirrorOn { ui.mirrorOn = false }
+        // Dragging a file in needs the drop zone, not the mirror; nor is there one with the add-on off.
+        if ui.mirrorOn && (fileDrag || !Settings.shared.mirrorEnabled) { ui.mirrorOn = false }
 
         if want != ui.expanded {
             // Closing the notch closes the mirror, which turns the camera off.
@@ -2734,7 +2792,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateOCRHotKey() {
-        ocrHotKey = Settings.shared.ocrHotkey
+        ocrHotKey = Settings.shared.ocrEnabled
             ? HotKey(keyCode: kVK_ANSI_2, modifiers: cmdKey | shiftKey) {
                 Logger(subsystem: "io.github.notchuser", category: "ocr").notice("⌘⇧2 pressed")
                 ScreenText.shared.capture()
