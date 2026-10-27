@@ -837,11 +837,9 @@ final class ScreenText {
         guard !busy else { return }
         // The preflight check can say "no" even with access granted on recent macOS, so it
         // doesn't block the capture; it only explains an empty result (see recognize).
-        // The first time, ask, so the app shows up in the Screen Recording list.
-        if !preflight && !UserDefaults.standard.bool(forKey: "screenAccessAsked") {
-            UserDefaults.standard.set(true, forKey: "screenAccessAsked")
-            CGRequestScreenCaptureAccess()
-        }
+        // Ask whenever access is missing: macOS only shows its prompt (and adds the app to the
+        // Screen Recording list) when the app isn't listed yet, e.g. after a permission reset.
+        if !preflight { CGRequestScreenCaptureAccess() }
         busy = true
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("notchuser-ocr-\(UUID().uuidString).png")
         let p = Process()
