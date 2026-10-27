@@ -4,6 +4,7 @@ import ServiceManagement
 import UniformTypeIdentifiers
 import QuickLookThumbnailing
 import AVFoundation
+import Combine
 
 // MARK: - Settings & language
 
@@ -752,6 +753,8 @@ final class Shelf: ObservableObject {
 final class CameraMirror: ObservableObject {
     enum State { case off, starting, running, denied, unavailable }
     @Published private(set) var state: State = .off
+    /// The macOS permission prompt is up; the notch stays open meanwhile.
+    @Published private(set) var asking = false
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "notch.camera")
     private var configured = false  // touched on `queue` only
@@ -764,8 +767,10 @@ final class CameraMirror: ObservableObject {
             run()
         case .notDetermined:
             state = .starting
+            asking = true
             AVCaptureDevice.requestAccess(for: .video) { ok in
                 DispatchQueue.main.async {
+                    self.asking = false
                     if !ok { self.state = .denied } else if self.wanted { self.run() } else { self.state = .off }
                 }
             }
@@ -1601,7 +1606,6 @@ struct NotchView: View {
                 .onTapGesture { ui.mirrorOn.toggle() }
                 .help(L("cameraMirror"))
         }
-        .onChange(of: ui.mirrorOn) { _, on in on ? camera.start() : camera.stop() }
     }
 
     @ViewBuilder private var regularSections: some View {
@@ -1921,6 +1925,8 @@ extension NSScreen {
 /// One notch per display: the real notch on the MacBook screen, a pill at the top of the others.
 final class NotchController {
     let ui = NotchState()
+    private let camera: CameraMirror
+    private var mirrorWatch: AnyCancellable?
     let panel: NotchPanel
     let displayID: CGDirectDisplayID
     var peekUntil = Date.distantPast
@@ -1929,6 +1935,7 @@ final class NotchController {
 
     init(screen: NSScreen, np: NowPlaying, shelf: Shelf, foco: FocoTimer, camera: CameraMirror) {
         displayID = screen.displayID
+        self.camera = camera
         panel = NotchPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
@@ -1942,6 +1949,11 @@ final class NotchController {
         panel.contentView = host
         layout(screen)
         panel.orderFrontRegardless()
+        // The camera follows the mirror: on when it opens, off as soon as it closes.
+        mirrorWatch = ui.$mirrorOn.removeDuplicates().dropFirst().sink { [weak self] on in
+            guard let self else { return }
+            if on { self.camera.start() } else { self.camera.stop() }
+        }
     }
 
     var screen: NSScreen? { NSScreen.screens.first { $0.displayID == displayID } }
@@ -2007,7 +2019,10 @@ final class NotchController {
         let hovering = ui.expanded
             ? (inside || now.timeIntervalSince(leftSince ?? now) < 0.25)
             : (inside && now.timeIntervalSince(hoverSince ?? now) >= 0.12)
-        let want = hovering || dragNear || (now < peekUntil && (np.hasMedia || foco.session != nil))
+        // Stay open while macOS asks for camera permission (the mouse goes to that prompt).
+        let want = hovering || dragNear || camera.asking || (now < peekUntil && (np.hasMedia || foco.session != nil))
+        // Dragging a file in needs the drop zone, not the mirror.
+        if fileDrag && ui.mirrorOn { ui.mirrorOn = false }
 
         if want != ui.expanded {
             // Closing the notch closes the mirror, which turns the camera off.
