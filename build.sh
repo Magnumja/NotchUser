@@ -54,6 +54,7 @@ cat > $APP/Contents/Info.plist <<EOF
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>en</string><string>pt</string><string>es</string></array>
   <key>NSAppleEventsUsageDescription</key><string>To show and control the music playing in Spotify and Apple Music.</string>
+  <key>NSCameraUsageDescription</key><string>The notch mirror shows your camera so you can check yourself before a call. Nothing is recorded.</string>
 </dict></plist>
 EOF
 # The macOS permission prompt in each language.
@@ -63,9 +64,16 @@ PERM_TEXT=(
   pt "Para mostrar e controlar a música do Spotify e do Apple Music."
   es "Para mostrar y controlar la música de Spotify y Apple Music."
 )
+typeset -A CAM_TEXT
+CAM_TEXT=(
+  en "The notch mirror shows your camera so you can check yourself before a call. Nothing is recorded."
+  pt "O espelho do notch mostra sua câmera para você se conferir antes de uma chamada. Nada é gravado."
+  es "El espejo del notch muestra tu cámara para que te veas antes de una llamada. No se graba nada."
+)
 for LANG_CODE in en pt es; do
   mkdir -p $APP/Contents/Resources/$LANG_CODE.lproj
   echo "\"NSAppleEventsUsageDescription\" = \"$PERM_TEXT[$LANG_CODE]\";" > $APP/Contents/Resources/$LANG_CODE.lproj/InfoPlist.strings
+  echo "\"NSCameraUsageDescription\" = \"$CAM_TEXT[$LANG_CODE]\";" >> $APP/Contents/Resources/$LANG_CODE.lproj/InfoPlist.strings
 done
 codesign --force --sign - $APP
 

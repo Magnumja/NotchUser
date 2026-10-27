@@ -3,6 +3,7 @@ import SwiftUI
 import ServiceManagement
 import UniformTypeIdentifiers
 import QuickLookThumbnailing
+import AVFoundation
 
 // MARK: - Settings & language
 
@@ -98,6 +99,16 @@ enum Strings {
         "otherScreens": ["en": "Show on other displays", "pt": "Mostrar em outras telas", "es": "Mostrar en otras pantallas"],
         "showFoco": ["en": "Show the Foco timer", "pt": "Mostrar o timer do Foco", "es": "Mostrar el temporizador de Foco"],
         "launchAtLogin": ["en": "Open at login", "pt": "Abrir ao iniciar sessão", "es": "Abrir al iniciar sesión"],
+        // Camera mirror
+        "cameraMirror": ["en": "Camera mirror", "pt": "Espelho de câmera", "es": "Espejo de cámara"],
+        "camera": ["en": "Camera", "pt": "Câmera", "es": "Cámara"],
+        "cameraDenied": ["en": "Allow camera access in System Settings to use the mirror.",
+                         "pt": "Permita o acesso à câmera nos Ajustes do Sistema para usar o espelho.",
+                         "es": "Permite el acceso a la cámara en Ajustes del Sistema para usar el espejo."],
+        "noCamera": ["en": "No camera found", "pt": "Nenhuma câmera encontrada", "es": "No se encontró ninguna cámara"],
+        "cameraHint": ["en": "The camera is only used by the notch mirror, and only while it's open.",
+                       "pt": "A câmera só é usada pelo espelho do notch, e só enquanto ele está aberto.",
+                       "es": "La cámara solo la usa el espejo del notch, y solo mientras está abierto."],
         // Settings window
         "welcomeTitle": ["en": "Welcome to NotchUser", "pt": "Bem-vindo ao NotchUser", "es": "Bienvenido a NotchUser"],
         "welcomeSub": ["en": "Your music and a file shelf, right in the notch.",
@@ -734,6 +745,113 @@ final class Shelf: ObservableObject {
     }
 }
 
+// MARK: - Camera mirror
+
+/// The built-in camera, shown mirrored in the notch to check yourself before a call.
+/// It only runs while the mirror is open; closing the notch turns it (and its light) off.
+final class CameraMirror: ObservableObject {
+    enum State { case off, starting, running, denied, unavailable }
+    @Published private(set) var state: State = .off
+    let session = AVCaptureSession()
+    private let queue = DispatchQueue(label: "notch.camera")
+    private var configured = false  // touched on `queue` only
+    private var wanted = false
+
+    func start() {
+        wanted = true
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            run()
+        case .notDetermined:
+            state = .starting
+            AVCaptureDevice.requestAccess(for: .video) { ok in
+                DispatchQueue.main.async {
+                    if !ok { self.state = .denied } else if self.wanted { self.run() } else { self.state = .off }
+                }
+            }
+        default:
+            state = .denied
+        }
+    }
+
+    private func run() {
+        state = .starting
+        queue.async { [self] in
+            if !configured {
+                guard let device = AVCaptureDevice.default(for: .video),
+                      let input = try? AVCaptureDeviceInput(device: device),
+                      session.canAddInput(input) else {
+                    DispatchQueue.main.async { self.state = .unavailable }
+                    return
+                }
+                session.beginConfiguration()
+                if session.canSetSessionPreset(.high) { session.sessionPreset = .high }
+                session.addInput(input)
+                session.commitConfiguration()
+                configured = true
+            }
+            session.startRunning()
+            DispatchQueue.main.async {
+                // Closed while the camera was warming up: turn it right back off.
+                if self.wanted {
+                    self.state = .running
+                } else {
+                    self.queue.async { self.session.stopRunning() }
+                }
+            }
+        }
+    }
+
+    func stop() {
+        wanted = false
+        if state == .running || state == .starting { state = .off }
+        queue.async { [self] in
+            if session.isRunning { session.stopRunning() }
+        }
+    }
+
+    static func openPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+/// Live preview layer, flipped horizontally so it behaves like a mirror.
+final class CameraPreviewView: NSView {
+    private let preview: AVCaptureVideoPreviewLayer
+
+    init(session: AVCaptureSession) {
+        preview = AVCaptureVideoPreviewLayer(session: session)
+        preview.videoGravity = .resizeAspectFill
+        preview.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 18
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        layer?.addSublayer(preview)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        // bounds/position (not frame) because the layer is transformed.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        preview.bounds = bounds
+        preview.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        CATransaction.commit()
+    }
+}
+
+struct CameraPreview: NSViewRepresentable {
+    let session: AVCaptureSession
+    func makeNSView(context: Context) -> CameraPreviewView { CameraPreviewView(session: session) }
+    func updateNSView(_ view: CameraPreviewView, context: Context) {}
+}
+
 // MARK: - Notch geometry
 
 final class NotchState: ObservableObject {
@@ -745,6 +863,7 @@ final class NotchState: ObservableObject {
     @Published var dragging = false      // a file is being dragged somewhere on screen
     @Published var dropTargeted = false  // ...and it is over the notch
     @Published var bump = false          // brief squash-and-stretch when something new arrives
+    @Published var mirrorOn = false      // the camera mirror replaces the usual sections
 
     var notchW: CGFloat = 185
     var notchH: CGFloat = 32
@@ -757,7 +876,8 @@ final class NotchState: ObservableObject {
     static let focusHeight: CGFloat = 44
     static let mediaHeight: CGFloat = 124
     static let shelfHeight: CGFloat = 78
-    static let emptyHeight: CGFloat = 56
+    static let emptyHeight: CGFloat = 84
+    static let mirrorHeight: CGFloat = 236
     static let separator: CGFloat = 13  // hairline plus the space around it
     static let itemW: CGFloat = 64
     static let itemGap: CGFloat = 4
@@ -766,6 +886,7 @@ final class NotchState: ObservableObject {
     var isEmpty: Bool { !showFocus && !showMedia && !showShelf }
 
     var expandedSize: CGSize {
+        if mirrorOn { return CGSize(width: Self.width, height: notchH + chrome + Self.mirrorHeight) }
         var sections: [CGFloat] = []
         if showFocus { sections.append(Self.focusHeight) }
         if showMedia { sections.append(Self.mediaHeight) }
@@ -775,7 +896,7 @@ final class NotchState: ObservableObject {
         return CGSize(width: Self.width, height: h)
     }
     var maxExpandedHeight: CGFloat {
-        notchH + chrome + Self.focusHeight + Self.mediaHeight + Self.shelfHeight + Self.separator * 2
+        notchH + chrome + max(Self.mirrorHeight, Self.focusHeight + Self.mediaHeight + Self.shelfHeight + Self.separator * 2)
     }
     static let maxExpandedWidth: CGFloat = 560
 
@@ -1123,6 +1244,7 @@ struct NotchView: View {
     @ObservedObject var ui: NotchState
     @ObservedObject var shelf: Shelf
     @ObservedObject var foco: FocoTimer
+    @ObservedObject var camera: CameraMirror
     @ObservedObject var settings = Settings.shared
 
     var body: some View {
@@ -1206,6 +1328,7 @@ struct NotchView: View {
                 get: { SMAppService.mainApp.status == .enabled },
                 set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
             Divider()
+            Button(L("cameraMirror")) { ui.mirrorOn = true }
             Button(L("settings")) { SettingsWindow.shared.show(welcome: false) }
             Button(L("quit")) { NSApp.terminate(nil) }
         }
@@ -1347,7 +1470,9 @@ struct NotchView: View {
                 .foregroundColor(.white.opacity(0.5))
             }
             HStack(spacing: 0) {
-                Group {
+                HStack(spacing: 0) {
+                    ControlButton(symbol: "camera", size: 15, color: .white.opacity(0.7)) { ui.mirrorOn = true }
+                        .help(L("cameraMirror"))
                     if np.isMusicApp {
                         ControlButton(symbol: np.favorited ? "heart.fill" : "heart", size: 17,
                                       color: np.favorited ? .pink : .white.opacity(0.7)) { np.toggleFavorite() }
@@ -1423,8 +1548,63 @@ struct NotchView: View {
         .frame(height: NotchState.shelfHeight)
     }
 
+    /// Live camera, mirrored like a real mirror, to check yourself before a call.
+    private var mirrorSection: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.05))
+            switch camera.state {
+            case .running, .starting:
+                CameraPreview(session: camera.session)
+                if camera.state == .starting { ProgressView().controlSize(.small) }
+            case .denied:
+                VStack(spacing: 8) {
+                    Image(systemName: "video.slash").font(.system(size: 22)).foregroundColor(.white.opacity(0.6))
+                    Text(L("cameraDenied"))
+                        .font(.system(size: 12)).foregroundColor(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                    Button(L("openSettings")) { CameraMirror.openPrivacySettings() }.controlSize(.small)
+                }
+                .padding(16)
+            case .unavailable:
+                Label(L("noCamera"), systemImage: "video.slash")
+                    .font(.system(size: 12)).foregroundColor(.white.opacity(0.6))
+            case .off:
+                EmptyView()
+            }
+        }
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.7))
+        .overlay(alignment: .topTrailing) {
+            ControlButton(symbol: "xmark", size: 11, color: .white.opacity(0.9), box: 26) { ui.mirrorOn = false }
+                .background(Circle().fill(Color.black.opacity(0.45)))
+                .padding(8)
+        }
+        .frame(height: NotchState.mirrorHeight)
+    }
+
     private var expanded: some View {
         VStack(spacing: 0) {
+            if ui.mirrorOn {
+                mirrorSection
+            } else {
+                regularSections
+            }
+        }
+        .padding(.top, ui.notchH + 4)
+        .padding(.horizontal, NotchState.hPad)
+        .padding(.bottom, 10)
+        .frame(width: ui.expandedSize.width, height: ui.expandedSize.height, alignment: .top)
+        // Clicking the notch itself (the black band where the camera sits) toggles the mirror.
+        .overlay(alignment: .top) {
+            Color.clear
+                .frame(height: ui.notchH)
+                .contentShape(Rectangle())
+                .onTapGesture { ui.mirrorOn.toggle() }
+                .help(L("cameraMirror"))
+        }
+        .onChange(of: ui.mirrorOn) { _, on in on ? camera.start() : camera.stop() }
+    }
+
+    @ViewBuilder private var regularSections: some View {
             if ui.showFocus { focusSection }
             if ui.showMedia {
                 if ui.showFocus { hairline }
@@ -1440,14 +1620,18 @@ struct NotchView: View {
                         .font(.system(size: 13, weight: .medium)).foregroundColor(.white.opacity(0.55))
                     Text(L("dragHint"))
                         .font(.system(size: 11)).foregroundColor(.white.opacity(0.35))
+                    Button { ui.mirrorOn = true } label: {
+                        Label(L("cameraMirror"), systemImage: "camera")
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Capsule().fill(Color.white.opacity(0.1)))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.white.opacity(0.8))
+                    .padding(.top, 4)
                 }
                 .frame(height: NotchState.emptyHeight)
             }
-        }
-        .padding(.top, ui.notchH + 4)
-        .padding(.horizontal, NotchState.hPad)
-        .padding(.bottom, 10)
-        .frame(width: ui.expandedSize.width, height: ui.expandedSize.height, alignment: .top)
     }
 }
 
@@ -1457,6 +1641,7 @@ struct NotchView: View {
 final class Permissions: ObservableObject {
     enum State { case notInstalled, granted, denied, ask }
     @Published private(set) var states: [String: State] = [:]
+    @Published private(set) var camera: State = .ask
     private let queue = DispatchQueue(label: "notch.permissions")
     private var timer: Timer?
 
@@ -1481,7 +1666,16 @@ final class Permissions: ObservableObject {
         queue.async {
             var s: [String: State] = [:]
             for p in Player.allCases { s[p.bundleID] = Self.check(p.bundleID, ask: false) }
-            DispatchQueue.main.async { self.states = s }
+            let cam: State
+            switch AVCaptureDevice.authorizationStatus(for: .video) {
+            case .authorized: cam = .granted
+            case .denied, .restricted: cam = .denied
+            default: cam = .ask
+            }
+            DispatchQueue.main.async {
+                self.states = s
+                if self.camera != cam { self.camera = cam }
+            }
         }
     }
 
@@ -1497,6 +1691,10 @@ final class Permissions: ObservableObject {
             _ = Self.check(bundleID, ask: true)
             self.refresh()
         }
+    }
+
+    func requestCamera() {
+        AVCaptureDevice.requestAccess(for: .video) { _ in self.refresh() }
     }
 
     func openSystemSettings() {
@@ -1543,8 +1741,9 @@ struct SettingsView: View {
                 VStack(spacing: 10) {
                     ForEach(Player.allCases, id: \.self) { p in
                         permissionRow(p)
-                        if p != Player.allCases.last { Divider().opacity(0.5) }
+                        Divider().opacity(0.5)
                     }
+                    cameraRow
                     Text(L("permHint"))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
@@ -1610,6 +1809,31 @@ struct SettingsView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.04)],
                                                  startPoint: .top, endPoint: .bottom), lineWidth: 0.7))
+        }
+    }
+
+    private var cameraRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.85))
+                .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(L("camera")).font(.system(size: 13, weight: .medium))
+                Text(L("cameraHint")).font(.system(size: 10.5)).foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            switch perms.camera {
+            case .granted:
+                Label(L("allowed"), systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.green)
+            case .denied:
+                Button(L("openSettings")) { CameraMirror.openPrivacySettings() }.controlSize(.small)
+            default:
+                Button(L("allow")) { perms.requestCamera() }.controlSize(.small)
+            }
         }
     }
 
@@ -1703,7 +1927,7 @@ final class NotchController {
     private var hoverSince: Date?
     private var leftSince: Date?
 
-    init(screen: NSScreen, np: NowPlaying, shelf: Shelf, foco: FocoTimer) {
+    init(screen: NSScreen, np: NowPlaying, shelf: Shelf, foco: FocoTimer, camera: CameraMirror) {
         displayID = screen.displayID
         panel = NotchPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
@@ -1712,7 +1936,7 @@ final class NotchController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
-        let host = HostingView(rootView: NotchView(np: np, ui: ui, shelf: shelf, foco: foco))
+        let host = HostingView(rootView: NotchView(np: np, ui: ui, shelf: shelf, foco: foco, camera: camera))
         // The panel has a fixed frame; without this every redraw also recomputes window constraints.
         host.sizingOptions = []
         panel.contentView = host
@@ -1786,6 +2010,8 @@ final class NotchController {
         let want = hovering || dragNear || (now < peekUntil && (np.hasMedia || foco.session != nil))
 
         if want != ui.expanded {
+            // Closing the notch closes the mirror, which turns the camera off.
+            if !want && ui.mirrorOn { ui.mirrorOn = false }
             ui.expanded = want
             if want {
                 shelf.prune()
@@ -1804,6 +2030,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let np = NowPlaying()
     let shelf = Shelf()
     let foco = FocoTimer()
+    let camera = CameraMirror()
     var controllers: [NotchController] = []
     var hoverTimer: Timer?
     private var hot = false
@@ -1865,7 +2092,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         for s in screens where !controllers.contains(where: { $0.displayID == s.displayID }) {
-            controllers.append(NotchController(screen: s, np: np, shelf: shelf, foco: foco))
+            controllers.append(NotchController(screen: s, np: np, shelf: shelf, foco: foco, camera: camera))
         }
         for c in controllers { if let s = c.screen { c.layout(s) } }
     }
