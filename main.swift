@@ -6,6 +6,8 @@ import QuickLookThumbnailing
 import AVFoundation
 import Combine
 import CoreAudio
+import Vision
+import Carbon.HIToolbox
 
 // MARK: - Settings & language
 
@@ -45,6 +47,14 @@ final class Settings: ObservableObject {
         }
     }
     static let audioChanged = Notification.Name("NotchUser.audioSettingChanged")
+    /// Global ⌘⇧2 shortcut to copy text from the screen.
+    @Published var ocrHotkey: Bool {
+        didSet {
+            d.set(ocrHotkey, forKey: "ocrHotkey")
+            NotificationCenter.default.post(name: Self.ocrChanged, object: nil)
+        }
+    }
+    static let ocrChanged = Notification.Name("NotchUser.ocrSettingChanged")
     var onboarded: Bool {
         get { d.bool(forKey: "onboarded") }
         set { d.set(newValue, forKey: "onboarded") }
@@ -56,6 +66,7 @@ final class Settings: ObservableObject {
         showOnAllScreens = d.object(forKey: "showOnAllScreens") as? Bool ?? true
         showFoco = d.object(forKey: "showFoco") as? Bool ?? true
         keepHeadphonesHQ = d.bool(forKey: "keepHeadphonesHQ")
+        ocrHotkey = d.object(forKey: "ocrHotkey") as? Bool ?? true
     }
 
     /// The language actually used: the chosen one, or the Mac's if it is one we have.
@@ -116,6 +127,20 @@ enum Strings {
         "showFoco": ["en": "Show the Foco timer", "pt": "Mostrar o timer do Foco", "es": "Mostrar el temporizador de Foco"],
         "launchAtLogin": ["en": "Open at login", "pt": "Abrir ao iniciar sessão", "es": "Abrir al iniciar sesión"],
         // Camera mirror
+        "copyTextFromScreen": ["en": "Copy text from screen", "pt": "Copiar texto da tela", "es": "Copiar texto de la pantalla"],
+        "textCopied": ["en": "Text copied", "pt": "Texto copiado", "es": "Texto copiado"],
+        "noTextFound": ["en": "No text found", "pt": "Nenhum texto encontrado", "es": "No se encontró texto"],
+        "noTextHint": ["en": "Try selecting a bigger or sharper area.", "pt": "Tente selecionar uma área maior ou mais nítida.",
+                       "es": "Prueba a seleccionar un área más grande o más nítida."],
+        "screenPermissionNeeded": ["en": "Allow Screen Recording for NotchUser", "pt": "Permita a Gravação de Tela pro NotchUser",
+                                   "es": "Permite la Grabación de pantalla para NotchUser"],
+        "screenPermissionHint": ["en": "Then quit and reopen NotchUser.", "pt": "Depois feche e abra o NotchUser de novo.",
+                                 "es": "Luego cierra y vuelve a abrir NotchUser."],
+        "screenRecording": ["en": "Screen Recording", "pt": "Gravação de Tela", "es": "Grabación de pantalla"],
+        "screenRecordingHint": ["en": "Only to copy text from the screen; the image is deleted right after reading.",
+                                "pt": "Só pra copiar texto da tela; a imagem é apagada logo depois da leitura.",
+                                "es": "Solo para copiar texto de la pantalla; la imagen se borra justo después de leerla."],
+        "ocrShortcut": ["en": "⌘⇧2 copies text from the screen", "pt": "⌘⇧2 copia texto da tela", "es": "⌘⇧2 copia texto de la pantalla"],
         "cameraMirror": ["en": "Camera mirror", "pt": "Espelho de câmera", "es": "Espejo de cámara"],
         "camera": ["en": "Camera", "pt": "Câmera", "es": "Cámara"],
         "cameraDenied": ["en": "Allow camera access in System Settings to use the mirror.",
@@ -761,6 +786,100 @@ final class Shelf: ObservableObject {
     }
 }
 
+// MARK: - Copy text from the screen (OCR)
+
+/// Select part of the screen; the text in it goes to the clipboard. Uses the system's own
+/// selection crosshair (screencapture -i) and on-device text recognition (Vision). The
+/// captured image is deleted right after it's read.
+final class ScreenText {
+    static let shared = ScreenText()
+    enum Result { case copied(String), nothing, needsPermission }
+    var onResult: ((Result) -> Void)?
+    private var busy = false
+
+    func capture() {
+        guard !busy else { return }
+        // Without Screen Recording access macOS only lets us capture the wallpaper.
+        guard CGPreflightScreenCaptureAccess() else {
+            if !CGRequestScreenCaptureAccess() { onResult?(.needsPermission) }
+            return
+        }
+        busy = true
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("notchuser-ocr-\(UUID().uuidString).png")
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-i", "-x", url.path]  // interactive selection, no shutter sound
+        p.terminationHandler = { [weak self] _ in self?.recognize(url) }
+        do { try p.run() } catch { busy = false }
+    }
+
+    // Runs on the process's background thread.
+    private func recognize(_ url: URL) {
+        defer { try? FileManager.default.removeItem(at: url) }
+        // No file means the selection was cancelled (Esc): nothing to say.
+        guard let image = NSImage(contentsOf: url)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            DispatchQueue.main.async { self.busy = false }
+            return
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.recognitionLanguages = ["pt-BR", "en-US", "es-ES"]
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        let text = Self.readingOrder(request.results ?? [])
+        DispatchQueue.main.async {
+            self.busy = false
+            if text.isEmpty {
+                self.onResult?(.nothing)
+            } else {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                self.onResult?(.copied(text))
+            }
+        }
+    }
+
+    /// Top to bottom, left to right; pieces on the same line are joined with a space.
+    private static func readingOrder(_ observations: [VNRecognizedTextObservation]) -> String {
+        let items = observations.compactMap { o in o.topCandidates(1).first.map { (box: o.boundingBox, text: $0.string) } }
+            .sorted { $0.box.midY > $1.box.midY }
+        var lines: [[(box: CGRect, text: String)]] = []
+        for item in items {
+            if let last = lines.last?.first, abs(last.box.midY - item.box.midY) < min(last.box.height, item.box.height) / 2 {
+                lines[lines.count - 1].append(item)
+            } else {
+                lines.append([item])
+            }
+        }
+        return lines.map { $0.sorted { $0.box.minX < $1.box.minX }.map(\.text).joined(separator: " ") }
+            .joined(separator: "\n")
+    }
+}
+
+/// A system-wide keyboard shortcut (Carbon hot keys need no Accessibility permission).
+final class HotKey {
+    private var ref: EventHotKeyRef?
+    private var handler: EventHandlerRef?
+    private let action: () -> Void
+
+    init(keyCode: Int, modifiers: Int, action: @escaping () -> Void) {
+        self.action = action
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, userData in
+            guard let userData else { return noErr }
+            Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue().action()
+            return noErr
+        }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &handler)
+        RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), EventHotKeyID(signature: OSType(0x4E555352), id: 1),
+                            GetApplicationEventTarget(), 0, &ref)
+    }
+
+    deinit {
+        if let ref { UnregisterEventHotKey(ref) }
+        if let handler { RemoveEventHandler(handler) }
+    }
+}
+
 // MARK: - Headphone quality
 
 /// Bluetooth headphones drop to call quality (mono, muffled) whenever their own microphone is
@@ -981,6 +1100,14 @@ final class NotchState: ObservableObject {
     @Published var dropTargeted = false  // ...and it is over the notch
     @Published var bump = false          // brief squash-and-stretch when something new arrives
     @Published var mirrorOn = false      // the camera mirror replaces the usual sections
+    /// A short message (e.g. "Text copied") shown on its own for a moment.
+    struct Toast: Equatable {
+        var icon: String
+        var title: String
+        var detail: String?
+        var ok: Bool
+    }
+    @Published var toast: Toast?
 
     var notchW: CGFloat = 185
     var notchH: CGFloat = 32
@@ -995,6 +1122,7 @@ final class NotchState: ObservableObject {
     static let shelfHeight: CGFloat = 78
     static let emptyHeight: CGFloat = 84
     static let mirrorHeight: CGFloat = 236
+    static let toastHeight: CGFloat = 52
     static let separator: CGFloat = 13  // hairline plus the space around it
     static let itemW: CGFloat = 64
     static let itemGap: CGFloat = 4
@@ -1004,6 +1132,7 @@ final class NotchState: ObservableObject {
 
     var expandedSize: CGSize {
         if mirrorOn { return CGSize(width: Self.width, height: notchH + chrome + Self.mirrorHeight) }
+        if toast != nil { return CGSize(width: Self.width, height: notchH + chrome + Self.toastHeight) }
         var sections: [CGFloat] = []
         if showFocus { sections.append(Self.focusHeight) }
         if showMedia { sections.append(Self.mediaHeight) }
@@ -1443,10 +1572,15 @@ struct NotchView: View {
             Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
             Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
                 .help(L("headphonesHQHint"))
+            Toggle(L("ocrShortcut"), isOn: $settings.ocrHotkey)
             Toggle(L("launchAtLogin"), isOn: Binding(
                 get: { SMAppService.mainApp.status == .enabled },
                 set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
             Divider()
+            Button("\(L("copyTextFromScreen"))  ⌘⇧2") {
+                // Let the menu close before the selection crosshair appears.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ScreenText.shared.capture() }
+            }
             Button(L("cameraMirror")) { ui.mirrorOn = true }
             Button(L("settings")) { SettingsWindow.shared.show(welcome: false) }
             Button(L("quit")) { NSApp.terminate(nil) }
@@ -1700,10 +1834,29 @@ struct NotchView: View {
         .frame(height: NotchState.mirrorHeight)
     }
 
+    private func toastSection(_ t: NotchState.Toast) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: t.icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(t.ok ? .green : .orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t.title).font(.system(size: 13.5, weight: .semibold)).foregroundColor(.white)
+                if let detail = t.detail {
+                    Text(detail).font(.system(size: 11.5)).foregroundColor(.white.opacity(0.6)).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(height: NotchState.toastHeight)
+        .transition(.opacity)
+    }
+
     private var expanded: some View {
         VStack(spacing: 0) {
             if ui.mirrorOn {
                 mirrorSection
+            } else if let toast = ui.toast {
+                toastSection(toast)
             } else {
                 regularSections
             }
@@ -1760,6 +1913,7 @@ final class Permissions: ObservableObject {
     enum State { case notInstalled, granted, denied, ask }
     @Published private(set) var states: [String: State] = [:]
     @Published private(set) var camera: State = .ask
+    @Published private(set) var screen: State = .ask
     private let queue = DispatchQueue(label: "notch.permissions")
     private var timer: Timer?
 
@@ -1793,6 +1947,8 @@ final class Permissions: ObservableObject {
             DispatchQueue.main.async {
                 self.states = s
                 if self.camera != cam { self.camera = cam }
+                let scr: State = CGPreflightScreenCaptureAccess() ? .granted : .ask
+                if self.screen != scr { self.screen = scr }
             }
         }
     }
@@ -1809,6 +1965,15 @@ final class Permissions: ObservableObject {
             _ = Self.check(bundleID, ask: true)
             self.refresh()
         }
+    }
+
+    func requestScreen() {
+        // Only the first request shows a prompt; after that, go to the settings pane.
+        if !CGRequestScreenCaptureAccess(),
+           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+        refresh()
     }
 
     func requestCamera() {
@@ -1862,6 +2027,8 @@ struct SettingsView: View {
                         Divider().opacity(0.5)
                     }
                     cameraRow
+                    Divider().opacity(0.5)
+                    screenRow
                     Text(L("permHint"))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
@@ -1876,6 +2043,7 @@ struct SettingsView: View {
                     Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
             Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
                 .help(L("headphonesHQHint"))
+            Toggle(L("ocrShortcut"), isOn: $settings.ocrHotkey)
                     // Only for people who have the Foco study-timer app.
                     if appURL(FocoTimer.bundleID) != nil {
                         Toggle(L("showFoco"), isOn: $settings.showFoco)
@@ -1929,6 +2097,28 @@ struct SettingsView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.04)],
                                                  startPoint: .top, endPoint: .bottom), lineWidth: 0.7))
+        }
+    }
+
+    private var screenRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "text.viewfinder")
+                .font(.system(size: 14))
+                .foregroundColor(.white.opacity(0.85))
+                .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(L("screenRecording")).font(.system(size: 13, weight: .medium))
+                Text(L("screenRecordingHint")).font(.system(size: 10.5)).foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            if perms.screen == .granted {
+                Label(L("allowed"), systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.green)
+            } else {
+                Button(L("allow")) { perms.requestScreen() }.controlSize(.small)
+            }
         }
     }
 
@@ -2048,6 +2238,7 @@ final class NotchController {
     var peekUntil = Date.distantPast
     /// Keeps the notch open on the mirror for a moment, e.g. right after camera access was granted.
     var mirrorHoldUntil = Date.distantPast
+    var toastUntil = Date.distantPast
     private var hoverSince: Date?
     private var leftSince: Date?
 
@@ -2138,7 +2329,8 @@ final class NotchController {
             ? (inside || now.timeIntervalSince(leftSince ?? now) < 0.25)
             : (inside && now.timeIntervalSince(hoverSince ?? now) >= 0.12)
         // Stay open while macOS asks for camera permission (the mouse goes to that prompt).
-        let want = hovering || dragNear || camera.asking || now < mirrorHoldUntil
+        if ui.toast != nil && now >= toastUntil { ui.toast = nil }
+        let want = hovering || dragNear || camera.asking || now < mirrorHoldUntil || now < toastUntil
             || (now < peekUntil && (np.hasMedia || foco.session != nil))
         // Dragging a file in needs the drop zone, not the mirror.
         if fileDrag && ui.mirrorOn { ui.mirrorOn = false }
@@ -2166,6 +2358,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let foco = FocoTimer()
     let camera = CameraMirror()
     let audioGuard = AudioGuard()
+    private var ocrHotKey: HotKey?
     var controllers: [NotchController] = []
     var hoverTimer: Timer?
     private var hot = false
@@ -2190,6 +2383,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         foco.start()
         if !Settings.shared.onboarded { SettingsWindow.shared.show(welcome: true) }
         audioGuard.update()
+        updateOCRHotKey()
+        NotificationCenter.default.addObserver(forName: Settings.ocrChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.updateOCRHotKey()
+        }
+        ScreenText.shared.onResult = { [weak self] result in
+            switch result {
+            case .copied(let text):
+                let preview = text.replacingOccurrences(of: "\n", with: " ")
+                self?.showToast(.init(icon: "doc.on.clipboard.fill", title: L("textCopied"), detail: String(preview.prefix(90)), ok: true))
+            case .nothing:
+                self?.showToast(.init(icon: "text.viewfinder", title: L("noTextFound"), detail: L("noTextHint"), ok: false))
+            case .needsPermission:
+                self?.showToast(.init(icon: "lock.fill", title: L("screenPermissionNeeded"), detail: L("screenPermissionHint"), ok: false), seconds: 5)
+            }
+        }
         NotificationCenter.default.addObserver(forName: Settings.audioChanged, object: nil, queue: .main) { [weak self] _ in
             self?.audioGuard.update()
         }
@@ -2240,6 +2448,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controllers.append(NotchController(screen: s, np: np, shelf: shelf, foco: foco, camera: camera))
         }
         for c in controllers { if let s = c.screen { c.layout(s) } }
+    }
+
+    private func updateOCRHotKey() {
+        ocrHotKey = Settings.shared.ocrHotkey
+            ? HotKey(keyCode: kVK_ANSI_2, modifiers: cmdKey | shiftKey) { ScreenText.shared.capture() }
+            : nil
+    }
+
+    /// Shows a short message in the notch (on the MacBook screen, or the first one).
+    func showToast(_ toast: NotchState.Toast, seconds: TimeInterval = 2.8) {
+        guard let c = controllers.first(where: { $0.screen?.hasNotch == true }) ?? controllers.first else { return }
+        c.ui.toast = toast
+        c.toastUntil = Date().addingTimeInterval(seconds)
+        c.bump()
+        setTickRate(hot: true)
     }
 
     func peek(_ seconds: TimeInterval) {
