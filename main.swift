@@ -8,6 +8,7 @@ import Combine
 import CoreAudio
 import Vision
 import Carbon.HIToolbox
+import os
 
 // MARK: - Settings & language
 
@@ -824,15 +825,23 @@ final class Shelf: ObservableObject {
 /// captured image is deleted right after it's read.
 final class ScreenText {
     static let shared = ScreenText()
+    private let log = Logger(subsystem: "io.github.notchuser", category: "ocr")
     enum Result { case copied(String), nothing, needsPermission }
     var onResult: ((Result) -> Void)?
     private var busy = false
 
     func capture() {
+        log.notice("capture requested (busy: \(self.busy, privacy: .public))")
         guard !busy else { return }
         // Without Screen Recording access macOS only lets us capture the wallpaper.
         guard CGPreflightScreenCaptureAccess() else {
-            if !CGRequestScreenCaptureAccess() { onResult?(.needsPermission) }
+            log.notice("no Screen Recording access")
+            // The system prompt only shows once; after that, open the settings pane directly.
+            if !CGRequestScreenCaptureAccess(),
+               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
+            onResult?(.needsPermission)
             return
         }
         busy = true
@@ -841,7 +850,13 @@ final class ScreenText {
         p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         p.arguments = ["-i", "-x", url.path]  // interactive selection, no shutter sound
         p.terminationHandler = { [weak self] _ in self?.recognize(url) }
-        do { try p.run() } catch { busy = false }
+        do {
+            try p.run()
+            log.notice("selection started")
+        } catch {
+            log.error("screencapture failed to start: \(error.localizedDescription, privacy: .public)")
+            busy = false
+        }
     }
 
     // Runs on the process's background thread.
@@ -849,6 +864,7 @@ final class ScreenText {
         defer { try? FileManager.default.removeItem(at: url) }
         // No file means the selection was cancelled (Esc): nothing to say.
         guard let image = NSImage(contentsOf: url)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            log.notice("selection cancelled")
             DispatchQueue.main.async { self.busy = false }
             return
         }
@@ -858,6 +874,7 @@ final class ScreenText {
         request.recognitionLanguages = ["pt-BR", "en-US", "es-ES"]
         try? VNImageRequestHandler(cgImage: image).perform([request])
         let text = Self.readingOrder(request.results ?? [])
+        log.notice("recognized \(text.count, privacy: .public) characters from a \(image.width, privacy: .public)x\(image.height, privacy: .public) image")
         DispatchQueue.main.async {
             self.busy = false
             if text.isEmpty {
@@ -901,8 +918,11 @@ final class HotKey {
             Unmanaged<HotKey>.fromOpaque(userData).takeUnretainedValue().action()
             return noErr
         }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), &handler)
-        RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), EventHotKeyID(signature: OSType(0x4E555352), id: 1),
-                            GetApplicationEventTarget(), 0, &ref)
+        let status = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), EventHotKeyID(signature: OSType(0x4E555352), id: 1),
+                                         GetApplicationEventTarget(), 0, &ref)
+        // Fails (e.g. eventHotKeyExistsErr) when another app already owns the same keys.
+        Logger(subsystem: "io.github.notchuser", category: "ocr")
+            .notice("hot key registered: \(status == noErr, privacy: .public) (status \(status, privacy: .public))")
     }
 
     deinit {
@@ -2701,7 +2721,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateOCRHotKey() {
         ocrHotKey = Settings.shared.ocrHotkey
-            ? HotKey(keyCode: kVK_ANSI_2, modifiers: cmdKey | shiftKey) { ScreenText.shared.capture() }
+            ? HotKey(keyCode: kVK_ANSI_2, modifiers: cmdKey | shiftKey) {
+                Logger(subsystem: "io.github.notchuser", category: "ocr").notice("⌘⇧2 pressed")
+                ScreenText.shared.capture()
+            }
             : nil
     }
 

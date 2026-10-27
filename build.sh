@@ -75,7 +75,10 @@ for LANG_CODE in en pt es; do
   echo "\"NSAppleEventsUsageDescription\" = \"$PERM_TEXT[$LANG_CODE]\";" > $APP/Contents/Resources/$LANG_CODE.lproj/InfoPlist.strings
   echo "\"NSCameraUsageDescription\" = \"$CAM_TEXT[$LANG_CODE]\";" >> $APP/Contents/Resources/$LANG_CODE.lproj/InfoPlist.strings
 done
-codesign --force --sign - $APP
+# Ad-hoc signatures are identified by their hash, which changes with every build, so macOS
+# would forget the privacy permissions (Screen Recording, Camera, Automation) after each update.
+# Identify the app by its bundle ID instead, so permissions carry over between versions.
+codesign --force --sign - -r="designated => identifier \"$BUNDLE_ID\"" $APP
 
 if [ "${1:-}" = "release" ]; then
   mkdir -p dist
