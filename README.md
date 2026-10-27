@@ -21,9 +21,12 @@
 - **Player no notch.** Passe o mouse no notch e ele abre com capa, título, barra de progresso e controles. Funciona com Spotify, Apple Music e **qualquer coisa tocando no navegador** (YouTube, SoundCloud…).
 - **Várias fontes ao mesmo tempo.** Mostra o que começou a tocar por último; os ícones no canto deixam trocar entre os apps.
 - **Prateleira.** Arraste arquivos, links ou texto até o notch para guardar; depois arraste para onde quiser (WhatsApp, e-mail, Finder…). Selecione vários e arraste todos juntos, ou mande por AirDrop.
+- **Copiar texto da tela.** Aperte **⌘⇧2**, selecione qualquer pedaço da tela (vídeo, imagem, PDF travado, slide numa chamada) e o texto vai direto para a área de transferência. Tudo no seu Mac, sem internet; a imagem é apagada logo depois.
+- **Espelho de câmera.** Clique no notch para se conferir antes de uma chamada. A câmera só liga enquanto o espelho está aberto.
+- **Fone Bluetooth em alta qualidade.** Opção que mantém o microfone do MacBook como entrada, para o fone não cair para a qualidade de ligação.
 - **Telas externas.** Em monitores sem notch aparece uma pílula no topo com tudo isso.
 - **Avisos discretos.** Quando a música troca, o notch abre por alguns segundos e dá um "pulinho".
-- **Português, English e Español.** Escolha o idioma na tela de boas-vindas ou deixe seguir o idioma do Mac.
+- **Português, English e Español.** Escolha o idioma na apresentação ou deixe seguir o idioma do Mac.
 
 ## Instalar
 
