@@ -9,6 +9,8 @@
 </p>
 
 > 🐧 Usa Ubuntu ou outro Linux com GNOME? Tem a versão para a barra de cima: [NotchUser-Linux](https://github.com/Magnumja/NotchUser-Linux).
+>
+> 🪟 No Windows? Tem a versão com a pílula no topo da tela: [NotchUser-Windows](https://github.com/Magnumja/NotchUser-Windows).
 
 ---
 
