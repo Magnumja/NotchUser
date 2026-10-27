@@ -9,6 +9,7 @@ import CoreAudio
 import Vision
 import Carbon.HIToolbox
 import os
+import ScreenCaptureKit
 
 // MARK: - Settings & language
 
@@ -831,18 +832,15 @@ final class ScreenText {
     private var busy = false
 
     func capture() {
-        log.notice("capture requested (busy: \(self.busy, privacy: .public))")
+        let preflight = CGPreflightScreenCaptureAccess()
+        log.notice("capture requested (busy: \(self.busy, privacy: .public), preflight: \(preflight, privacy: .public))")
         guard !busy else { return }
-        // Without Screen Recording access macOS only lets us capture the wallpaper.
-        guard CGPreflightScreenCaptureAccess() else {
-            log.notice("no Screen Recording access")
-            // The system prompt only shows once; after that, open the settings pane directly.
-            if !CGRequestScreenCaptureAccess(),
-               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
-            }
-            onResult?(.needsPermission)
-            return
+        // The preflight check can say "no" even with access granted on recent macOS, so it
+        // doesn't block the capture; it only explains an empty result (see recognize).
+        // The first time, ask, so the app shows up in the Screen Recording list.
+        if !preflight && !UserDefaults.standard.bool(forKey: "screenAccessAsked") {
+            UserDefaults.standard.set(true, forKey: "screenAccessAsked")
+            CGRequestScreenCaptureAccess()
         }
         busy = true
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("notchuser-ocr-\(UUID().uuidString).png")
@@ -878,7 +876,15 @@ final class ScreenText {
         DispatchQueue.main.async {
             self.busy = false
             if text.isEmpty {
-                self.onResult?(.nothing)
+                // Without access the capture only shows the wallpaper, so no text at all.
+                if !CGPreflightScreenCaptureAccess() {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                        NSWorkspace.shared.open(url)
+                    }
+                    self.onResult?(.needsPermission)
+                } else {
+                    self.onResult?(.nothing)
+                }
             } else {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
@@ -2653,6 +2659,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !Settings.shared.onboarded { SettingsWindow.shared.show(welcome: true) }
         audioGuard.update()
         updateOCRHotKey()
+        logScreenAccess()
         NotificationCenter.default.addObserver(forName: Settings.ocrChanged, object: nil, queue: .main) { [weak self] _ in
             self?.updateOCRHotKey()
         }
@@ -2717,6 +2724,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controllers.append(NotchController(screen: s, np: np, shelf: shelf, foco: foco, camera: camera))
         }
         for c in controllers { if let s = c.screen { c.layout(s) } }
+    }
+
+    /// Logs what macOS reports about Screen Recording access, through two different APIs.
+    private func logScreenAccess() {
+        let log = Logger(subsystem: "io.github.notchuser", category: "ocr")
+        log.notice("screen access at launch: preflight \(CGPreflightScreenCaptureAccess(), privacy: .public)")
+        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
+            log.notice("screen access at launch: ScreenCaptureKit \(error == nil && content != nil ? "ok" : "denied: \(error?.localizedDescription ?? "-")", privacy: .public)")
+        }
     }
 
     private func updateOCRHotKey() {
