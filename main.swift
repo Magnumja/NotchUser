@@ -152,9 +152,9 @@ enum Strings {
                        "es": "La cámara solo la usa el espejo del notch, y solo mientras está abierto."],
         // Settings window
         "welcomeTitle": ["en": "Welcome to NotchUser", "pt": "Bem-vindo ao NotchUser", "es": "Bienvenido a NotchUser"],
-        "welcomeSub": ["en": "Your music and a file shelf, right in the notch.",
-                       "pt": "Sua música e uma prateleira de arquivos, direto no notch.",
-                       "es": "Tu música y un estante de archivos, justo en el notch."],
+        "welcomeSub": ["en": "Your music, a file shelf, text from the screen and a mirror, right in the notch.",
+                       "pt": "Sua música, uma prateleira, texto da tela e um espelho, direto no notch.",
+                       "es": "Tu música, un estante, texto de la pantalla y un espejo, justo en el notch."],
         "settingsTitle": ["en": "NotchUser Settings", "pt": "Ajustes do NotchUser", "es": "Ajustes de NotchUser"],
         "language": ["en": "Language", "pt": "Idioma", "es": "Idioma"],
         "langSystem": ["en": "System", "pt": "Sistema", "es": "Sistema"],
@@ -170,6 +170,37 @@ enum Strings {
         "tip": ["en": "Hover the notch to open it. Right-click it for options and Settings.",
                 "pt": "Passe o mouse no notch pra abrir. Clique com o botão direito pra ver opções e Ajustes.",
                 "es": "Pasa el ratón por el notch para abrirlo. Haz clic derecho para ver opciones y Ajustes."],
+        "next": ["en": "Continue", "pt": "Continuar", "es": "Continuar"],
+        "back": ["en": "Back", "pt": "Voltar", "es": "Atrás"],
+        "featuresTitle": ["en": "What it does", "pt": "O que ele faz", "es": "Qué hace"],
+        "featMusic": ["en": "Music in the notch", "pt": "Música no notch", "es": "Música en el notch"],
+        "featMusicDesc": ["en": "Hover the notch: cover, progress and controls for Spotify, Apple Music and the browser.",
+                          "pt": "Passe o mouse no notch: capa, progresso e controles do Spotify, Apple Music e navegador.",
+                          "es": "Pasa el ratón por el notch: portada, progreso y controles de Spotify, Apple Music y el navegador."],
+        "featShelf": ["en": "Shelf", "pt": "Prateleira", "es": "Estante"],
+        "featShelfDesc": ["en": "Drag files, links or text to the notch and drop them anywhere later.",
+                          "pt": "Arraste arquivos, links ou texto até o notch e solte onde quiser depois.",
+                          "es": "Arrastra archivos, enlaces o texto al notch y suéltalos donde quieras después."],
+        "featOCR": ["en": "Copy text from the screen", "pt": "Copiar texto da tela", "es": "Copiar texto de la pantalla"],
+        "featOCRDesc": ["en": "Press ⌘⇧2, select an area and its text goes to the clipboard.",
+                        "pt": "Aperte ⌘⇧2, selecione uma área e o texto vai pra área de transferência.",
+                        "es": "Pulsa ⌘⇧2, selecciona un área y su texto va al portapapeles."],
+        "featMirror": ["en": "Camera mirror", "pt": "Espelho de câmera", "es": "Espejo de cámara"],
+        "featMirrorDesc": ["en": "Click the notch to check yourself before a call.",
+                           "pt": "Clique no notch pra se conferir antes de uma chamada.",
+                           "es": "Haz clic en el notch para verte antes de una llamada."],
+        "permissionsSub": ["en": "Give them now and just use the app later. All optional — you can change them anytime in Settings.",
+                           "pt": "Dê agora e depois é só usar. Tudo é opcional, e dá pra mudar quando quiser nos Ajustes.",
+                           "es": "Dalos ahora y luego solo úsala. Todo es opcional y puedes cambiarlo cuando quieras en Ajustes."],
+        "readyTitle": ["en": "You're all set!", "pt": "Tudo pronto!", "es": "¡Todo listo!"],
+        "tipHover": ["en": "Hover the notch to open it", "pt": "Passe o mouse no notch pra abrir", "es": "Pasa el ratón por el notch para abrirlo"],
+        "tipOCR": ["en": "⌘⇧2 copies text from anywhere on the screen", "pt": "⌘⇧2 copia texto de qualquer lugar da tela",
+                   "es": "⌘⇧2 copia texto de cualquier lugar de la pantalla"],
+        "tipMenu": ["en": "Right-click the notch for options and Settings", "pt": "Botão direito no notch: opções e Ajustes",
+                    "es": "Clic derecho en el notch: opciones y Ajustes"],
+        "relaunchNote": ["en": "NotchUser will reopen to turn on Screen Recording.",
+                         "pt": "O NotchUser vai reabrir pra ativar a Gravação de Tela.",
+                         "es": "NotchUser se volverá a abrir para activar la Grabación de pantalla."],
         "getStarted": ["en": "Get started", "pt": "Começar", "es": "Empezar"],
         "done": ["en": "Done", "pt": "Pronto", "es": "Listo"],
     ]
@@ -1987,8 +2018,111 @@ final class Permissions: ObservableObject {
     }
 }
 
+/// Frosted group with a small caption, like the panes in System Settings.
+func glassSection<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
+        if !title.isEmpty {
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.leading, 4)
+        }
+        content()
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.04)],
+                                             startPoint: .top, endPoint: .bottom), lineWidth: 0.7))
+    }
+}
+
+/// One row per permission (players, camera, screen), shared by the walkthrough and Settings.
+struct PermissionsList: View {
+    @ObservedObject var perms: Permissions
+    var onScreenRequest: () -> Void = {}
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ForEach(Player.allCases, id: \.self) { p in
+                playerRow(p)
+                Divider().opacity(0.5)
+            }
+            cameraRow
+            Divider().opacity(0.5)
+            screenRow
+        }
+    }
+
+    private var allowed: some View {
+        Label(L("allowed"), systemImage: "checkmark.circle.fill")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(.green)
+    }
+
+    private func row<Status: View>(icon: AnyView, title: String, hint: String?, @ViewBuilder status: () -> Status) -> some View {
+        HStack(spacing: 10) {
+            icon.frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 13, weight: .medium))
+                if let hint {
+                    Text(hint).font(.system(size: 10.5)).foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            status()
+        }
+    }
+
+    private func symbol(_ name: String) -> AnyView {
+        AnyView(Image(systemName: name).font(.system(size: 14)).foregroundColor(.white.opacity(0.85)))
+    }
+
+    private func playerRow(_ p: Player) -> some View {
+        let icon: AnyView = appIcon(p.bundleID).map { AnyView(Image(nsImage: $0).resizable()) } ?? symbol("music.note")
+        return row(icon: icon, title: p == .music ? "Apple Music" : "Spotify", hint: nil) {
+            switch perms.states[p.bundleID] ?? .ask {
+            case .notInstalled:
+                Text(L("notInstalled")).font(.system(size: 12)).foregroundColor(.secondary)
+            case .granted:
+                allowed
+            case .denied:
+                Button(L("openSettings")) { perms.openSystemSettings() }.controlSize(.small)
+            case .ask:
+                Button(L("allow")) { perms.request(p.bundleID) }.controlSize(.small)
+            }
+        }
+    }
+
+    private var cameraRow: some View {
+        row(icon: symbol("camera.fill"), title: L("camera"), hint: L("cameraHint")) {
+            switch perms.camera {
+            case .granted:
+                allowed
+            case .denied:
+                Button(L("openSettings")) { CameraMirror.openPrivacySettings() }.controlSize(.small)
+            default:
+                Button(L("allow")) { perms.requestCamera() }.controlSize(.small)
+            }
+        }
+    }
+
+    private var screenRow: some View {
+        row(icon: symbol("text.viewfinder"), title: L("screenRecording"), hint: L("screenRecordingHint")) {
+            if perms.screen == .granted {
+                allowed
+            } else {
+                Button(L("allow")) {
+                    onScreenRequest()
+                    perms.requestScreen()
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+}
+
 struct SettingsView: View {
-    var welcome: Bool
     var onDone: () -> Void
     @ObservedObject var settings = Settings.shared
     @ObservedObject var perms: Permissions
@@ -2000,19 +2134,12 @@ struct SettingsView: View {
                     .resizable()
                     .frame(width: 64, height: 64)
                     .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
-                Text(welcome ? L("welcomeTitle") : L("settingsTitle"))
+                Text(L("settingsTitle"))
                     .font(.system(size: 21, weight: .bold))
-                if welcome {
-                    Text(L("welcomeSub"))
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
             .padding(.top, 24)
 
-            section(L("language")) {
+            glassSection(L("language")) {
                 Picker("", selection: $settings.language) {
                     ForEach(Settings.Language.allCases) { Text($0.title).tag($0) }
                 }
@@ -2020,15 +2147,9 @@ struct SettingsView: View {
                 .labelsHidden()
             }
 
-            section(L("permissions")) {
+            glassSection(L("permissions")) {
                 VStack(spacing: 10) {
-                    ForEach(Player.allCases, id: \.self) { p in
-                        permissionRow(p)
-                        Divider().opacity(0.5)
-                    }
-                    cameraRow
-                    Divider().opacity(0.5)
-                    screenRow
+                    PermissionsList(perms: perms)
                     Text(L("permHint"))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
@@ -2037,23 +2158,18 @@ struct SettingsView: View {
                 }
             }
 
-            section(L("behavior")) {
+            glassSection(L("behavior")) {
                 VStack(alignment: .leading, spacing: 9) {
                     Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
                     Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
-            Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
-                .help(L("headphonesHQHint"))
-            Toggle(L("ocrShortcut"), isOn: $settings.ocrHotkey)
+                    Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
+                        .help(L("headphonesHQHint"))
+                    Toggle(L("ocrShortcut"), isOn: $settings.ocrHotkey)
                     // Only for people who have the Foco study-timer app.
                     if appURL(FocoTimer.bundleID) != nil {
                         Toggle(L("showFoco"), isOn: $settings.showFoco)
                     }
-                    Toggle(L("launchAtLogin"), isOn: Binding(
-                        get: { SMAppService.mainApp.status == .enabled },
-                        set: { on in
-                            try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-                            settings.objectWillChange.send()
-                        }))
+                    LaunchAtLoginToggle(settings: settings)
                 }
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -2068,7 +2184,7 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Button(action: onDone) {
-                Text(welcome ? L("getStarted") : L("done"))
+                Text(L("done"))
                     .font(.system(size: 13, weight: .semibold))
                     .frame(maxWidth: .infinity)
             }
@@ -2083,96 +2199,204 @@ struct SettingsView: View {
         .environment(\.colorScheme, .dark)
         .animation(.easeInOut(duration: 0.2), value: settings.language)
     }
+}
 
-    /// A frosted group with a small caption, like the panes in System Settings.
-    private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundColor(.secondary)
-                .padding(.leading, 4)
-            content()
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.06)))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.04)],
-                                                 startPoint: .top, endPoint: .bottom), lineWidth: 0.7))
-        }
+struct LaunchAtLoginToggle: View {
+    @ObservedObject var settings: Settings
+    var body: some View {
+        Toggle(L("launchAtLogin"), isOn: Binding(
+            get: { SMAppService.mainApp.status == .enabled },
+            set: { on in
+                try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+                settings.objectWillChange.send()
+            }))
     }
+}
 
-    private var screenRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "text.viewfinder")
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.85))
-                .frame(width: 26, height: 26)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(L("screenRecording")).font(.system(size: 13, weight: .medium))
-                Text(L("screenRecordingHint")).font(.system(size: 10.5)).foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-            if perms.screen == .granted {
-                Label(L("allowed"), systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.green)
-            } else {
-                Button(L("allow")) { perms.requestScreen() }.controlSize(.small)
-            }
-        }
-    }
+// MARK: - First-run walkthrough
 
-    private var cameraRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "camera.fill")
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.85))
-                .frame(width: 26, height: 26)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(L("camera")).font(.system(size: 13, weight: .medium))
-                Text(L("cameraHint")).font(.system(size: 10.5)).foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-            switch perms.camera {
-            case .granted:
-                Label(L("allowed"), systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.green)
-            case .denied:
-                Button(L("openSettings")) { CameraMirror.openPrivacySettings() }.controlSize(.small)
-            default:
-                Button(L("allow")) { perms.requestCamera() }.controlSize(.small)
-            }
-        }
-    }
+final class OnboardingModel: ObservableObject {
+    static let pages = 4
+    @Published var page = 0
+    /// Screen Recording only takes effect after a relaunch, so remember if it was asked for.
+    var screenRequested = false
+}
 
-    private func permissionRow(_ p: Player) -> some View {
-        HStack(spacing: 10) {
+/// Shown once, the first time the app opens: welcome and language, what it does,
+/// every permission in one place, and a few last options.
+struct OnboardingView: View {
+    @ObservedObject var model: OnboardingModel
+    @ObservedObject var perms: Permissions
+    @ObservedObject var settings = Settings.shared
+    var onFinish: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
             Group {
-                if let icon = appIcon(p.bundleID) { Image(nsImage: icon).resizable() }
-                else { Image(systemName: "music.note") }
+                switch model.page {
+                case 0: welcomePage
+                case 1: featuresPage
+                case 2: permissionsPage
+                default: readyPage
+                }
             }
-            .frame(width: 26, height: 26)
-            Text(p == .music ? "Apple Music" : "Spotify").font(.system(size: 13, weight: .medium))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .id(model.page)
+            .transition(.asymmetric(insertion: .opacity.combined(with: .offset(x: 40)),
+                                    removal: .opacity.combined(with: .offset(x: -40))))
+            footer
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 36)
+        .padding(.bottom, 22)
+        .frame(width: 500, height: 610)
+        .background(VisualEffect(material: .hudWindow).ignoresSafeArea())
+        .environment(\.colorScheme, .dark)
+        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: model.page)
+        .animation(.easeInOut(duration: 0.2), value: settings.language)
+    }
+
+    // MARK: Pages
+
+    private var welcomePage: some View {
+        VStack(spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 104, height: 104)
+                .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
+            Text(L("welcomeTitle")).font(.system(size: 26, weight: .bold))
+            Text(L("welcomeSub"))
+                .font(.system(size: 14))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer().frame(height: 18)
+            glassSection(L("language")) {
+                Picker("", selection: $settings.language) {
+                    ForEach(Settings.Language.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+        }
+    }
+
+    private var featuresPage: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(L("featuresTitle"))
+                .font(.system(size: 22, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 4)
+            feature("music.note", .pink, L("featMusic"), L("featMusicDesc"))
+            feature("tray.full.fill", .blue, L("featShelf"), L("featShelfDesc"))
+            feature("text.viewfinder", .orange, L("featOCR"), L("featOCRDesc"))
+            feature("camera.fill", .green, L("featMirror"), L("featMirrorDesc"))
+        }
+    }
+
+    private func feature(_ icon: String, _ color: Color, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(color.gradient)
+                .frame(width: 42, height: 42)
+                .overlay(Image(systemName: icon).font(.system(size: 18, weight: .semibold)).foregroundColor(.white))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 14, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var permissionsPage: some View {
+        VStack(spacing: 12) {
+            Text(L("permissions")).font(.system(size: 22, weight: .bold))
+            Text(L("permissionsSub"))
+                .font(.system(size: 12.5))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 4)
+            glassSection("") {
+                PermissionsList(perms: perms, onScreenRequest: { model.screenRequested = true })
+            }
+        }
+    }
+
+    private var readyPage: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 46))
+                .foregroundStyle(.green)
+            Text(L("readyTitle")).font(.system(size: 24, weight: .bold))
+            glassSection(L("behavior")) {
+                VStack(alignment: .leading, spacing: 9) {
+                    LaunchAtLoginToggle(settings: settings)
+                    Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
+                        .help(L("headphonesHQHint"))
+                    Toggle(L("ocrShortcut"), isOn: $settings.ocrHotkey)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.system(size: 13))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Label(L("tipHover"), systemImage: "cursorarrow.motionlines")
+                Label(L("tipOCR"), systemImage: "text.viewfinder")
+                Label(L("tipMenu"), systemImage: "contextualmenu.and.cursorarrow")
+            }
+            .font(.system(size: 12.5))
+            .foregroundColor(.white.opacity(0.75))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            if model.screenRequested {
+                Text(L("relaunchNote"))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        let last = model.page == OnboardingModel.pages - 1
+        return HStack {
+            Button(L("back")) { model.page -= 1 }
+                .buttonStyle(.plain)
+                .foregroundColor(.white.opacity(0.6))
+                .opacity(model.page > 0 ? 1 : 0)
+                .disabled(model.page == 0)
+                .frame(width: 100, alignment: .leading)
             Spacer()
-            switch perms.states[p.bundleID] ?? .ask {
-            case .notInstalled:
-                Text(L("notInstalled")).font(.system(size: 12)).foregroundColor(.secondary)
-            case .granted:
-                Label(L("allowed"), systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.green)
-            case .denied:
-                Button(L("openSettings")) { perms.openSystemSettings() }.controlSize(.small)
-            case .ask:
-                Button(L("allow")) { perms.request(p.bundleID) }.controlSize(.small)
+            HStack(spacing: 7) {
+                ForEach(0..<OnboardingModel.pages, id: \.self) { i in
+                    Capsule()
+                        .fill(Color.white.opacity(i == model.page ? 0.9 : 0.25))
+                        .frame(width: i == model.page ? 18 : 7, height: 7)
+                }
             }
+            Spacer()
+            Button {
+                if last { onFinish() } else { model.page += 1 }
+            } label: {
+                Text(last ? L("getStarted") : L("next"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 84)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+            .frame(width: 100, alignment: .trailing)
         }
     }
 }
 
-/// Centered, translucent window: the welcome screen on first launch, Settings afterwards.
+/// Centered, translucent window: the walkthrough on first launch, Settings afterwards.
 final class SettingsWindow: NSObject, NSWindowDelegate {
     static let shared = SettingsWindow()
     private var window: NSWindow?
@@ -2193,15 +2417,40 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             window = w
         }
         guard let w = window else { return }
-        let controller = NSHostingController(rootView: SettingsView(welcome: welcome, onDone: { [weak self] in self?.window?.close() }, perms: perms))
-        // Fixed width, height measured from the content.
-        let fit = controller.sizeThatFits(in: CGSize(width: 440, height: 2000))
-        w.contentViewController = controller
-        w.setContentSize(NSSize(width: 440, height: fit.height))
+        if welcome {
+            let model = OnboardingModel()
+            let view = OnboardingView(model: model, perms: perms) { [weak self] in self?.finishOnboarding(model) }
+            w.contentViewController = NSHostingController(rootView: view)
+            w.setContentSize(NSSize(width: 500, height: 610))
+        } else {
+            let controller = NSHostingController(rootView: SettingsView(onDone: { [weak self] in self?.window?.close() }, perms: perms))
+            // Fixed width, height measured from the content.
+            let fit = controller.sizeThatFits(in: CGSize(width: 440, height: 2000))
+            w.contentViewController = controller
+            w.setContentSize(NSSize(width: 440, height: fit.height))
+        }
         w.center()
         perms.start()
         NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
+    }
+
+    private func finishOnboarding(_ model: OnboardingModel) {
+        Settings.shared.onboarded = true
+        // macOS only applies Screen Recording access after the app restarts.
+        if model.screenRequested {
+            relaunch()
+        } else {
+            window?.close()
+        }
+    }
+
+    private func relaunch() {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
+        try? p.run()
+        NSApp.terminate(nil)
     }
 
     func windowWillClose(_ notification: Notification) {

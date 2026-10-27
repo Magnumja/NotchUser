@@ -34,9 +34,9 @@
    ```bash
    xattr -dr com.apple.quarantine /Applications/NotchUser.app
    ```
-4. Na **tela de boas-vindas**, escolha o idioma e clique em **Permitir** ao lado do Spotify e do Apple Music (é o que deixa o app mostrar e controlar a música deles). Ali também dá para ligar **Abrir ao iniciar sessão**.
+4. Uma **apresentação rápida** mostra o que o app faz, deixa escolher o idioma e pede **todas as permissões num lugar só** (Spotify, Apple Music, Câmera e Gravação de Tela). Todas são opcionais. Se você liberar a Gravação de Tela, o app se reabre sozinho no final para ativá-la.
 
-Para voltar a essa tela depois: botão direito no notch → **Ajustes…**.
+Para mudar tudo depois: botão direito no notch → **Ajustes…**.
 
 Requisitos: macOS 14 (Sonoma) ou mais novo, Apple Silicon ou Intel.
 
