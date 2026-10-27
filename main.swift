@@ -822,32 +822,44 @@ final class CameraMirror: ObservableObject {
     }
 }
 
-/// Live preview layer, flipped horizontally so it behaves like a mirror.
+/// Live camera view. The preview layer *is* the view's layer, so it always has the view's
+/// size (a sublayer stayed at zero size, since SwiftUI resizes views without a layout pass).
 final class CameraPreviewView: NSView {
     private let preview: AVCaptureVideoPreviewLayer
+    private var startObserver: NSObjectProtocol?
 
     init(session: AVCaptureSession) {
         preview = AVCaptureVideoPreviewLayer(session: session)
-        preview.videoGravity = .resizeAspectFill
-        preview.setAffineTransform(CGAffineTransform(scaleX: -1, y: 1))
         super.init(frame: .zero)
+        preview.videoGravity = .resizeAspectFill
+        preview.cornerRadius = 18
+        preview.cornerCurve = .continuous
+        preview.masksToBounds = true
+        layer = preview
         wantsLayer = true
-        layer?.cornerRadius = 18
-        layer?.cornerCurve = .continuous
-        layer?.masksToBounds = true
-        layer?.addSublayer(preview)
+        applyMirror()
+        // The video connection only exists once the camera is wired in, so mirror again then.
+        startObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.didStartRunningNotification, object: session, queue: .main
+        ) { [weak self] _ in self?.applyMirror() }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func layout() {
-        super.layout()
-        // bounds/position (not frame) because the layer is transformed.
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        preview.bounds = bounds
-        preview.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        CATransaction.commit()
+    deinit {
+        if let startObserver { NotificationCenter.default.removeObserver(startObserver) }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyMirror()
+    }
+
+    /// Flip it like a real mirror.
+    private func applyMirror() {
+        guard let c = preview.connection, c.isVideoMirroringSupported else { return }
+        c.automaticallyAdjustsVideoMirroring = false
+        c.isVideoMirrored = true
     }
 }
 
