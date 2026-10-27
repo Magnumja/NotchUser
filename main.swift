@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 import QuickLookThumbnailing
 import AVFoundation
 import Combine
+import CoreAudio
 
 // MARK: - Settings & language
 
@@ -36,6 +37,14 @@ final class Settings: ObservableObject {
         }
     }
     @Published var showFoco: Bool { didSet { d.set(showFoco, forKey: "showFoco") } }
+    /// Keep the built-in mic as input so Bluetooth headphones never drop to call quality.
+    @Published var keepHeadphonesHQ: Bool {
+        didSet {
+            d.set(keepHeadphonesHQ, forKey: "keepHeadphonesHQ")
+            NotificationCenter.default.post(name: Self.audioChanged, object: nil)
+        }
+    }
+    static let audioChanged = Notification.Name("NotchUser.audioSettingChanged")
     var onboarded: Bool {
         get { d.bool(forKey: "onboarded") }
         set { d.set(newValue, forKey: "onboarded") }
@@ -46,6 +55,7 @@ final class Settings: ObservableObject {
         peekOnTrackChange = d.object(forKey: "peekOnTrackChange") as? Bool ?? true
         showOnAllScreens = d.object(forKey: "showOnAllScreens") as? Bool ?? true
         showFoco = d.object(forKey: "showFoco") as? Bool ?? true
+        keepHeadphonesHQ = d.bool(forKey: "keepHeadphonesHQ")
     }
 
     /// The language actually used: the chosen one, or the Mac's if it is one we have.
@@ -98,6 +108,11 @@ enum Strings {
         "quit": ["en": "Quit NotchUser", "pt": "Sair do NotchUser", "es": "Salir de NotchUser"],
         "peekOnTrack": ["en": "Show when the song changes", "pt": "Mostrar ao trocar de música", "es": "Mostrar al cambiar de canción"],
         "otherScreens": ["en": "Show on other displays", "pt": "Mostrar em outras telas", "es": "Mostrar en otras pantallas"],
+        "headphonesHQ": ["en": "Keep Bluetooth headphones in high quality", "pt": "Manter o fone Bluetooth em alta qualidade",
+                         "es": "Mantener los auriculares Bluetooth en alta calidad"],
+        "headphonesHQHint": ["en": "Uses the MacBook's mic, so headphones never drop to call quality. Turn off to talk through the headphones' mic.",
+                             "pt": "Usa o microfone do MacBook, pra o fone não cair pra qualidade de ligação. Desligue se quiser falar pelo microfone do fone.",
+                             "es": "Usa el micrófono del MacBook para que los auriculares no bajen a calidad de llamada. Desactívalo para hablar por el micrófono de los auriculares."],
         "showFoco": ["en": "Show the Foco timer", "pt": "Mostrar o timer do Foco", "es": "Mostrar el temporizador de Foco"],
         "launchAtLogin": ["en": "Open at login", "pt": "Abrir ao iniciar sessão", "es": "Abrir al iniciar sesión"],
         // Camera mirror
@@ -746,6 +761,84 @@ final class Shelf: ObservableObject {
     }
 }
 
+// MARK: - Headphone quality
+
+/// Bluetooth headphones drop to call quality (mono, muffled) whenever their own microphone is
+/// in use. With the option on, whenever macOS picks a Bluetooth mic as input (it does so when
+/// headphones connect), the built-in mic is put back.
+final class AudioGuard {
+    private let system = AudioObjectID(kAudioObjectSystemObject)
+    private var listening = false
+    private lazy var listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.enforce() }
+
+    private func address(_ selector: AudioObjectPropertySelector,
+                         _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+    }
+
+    func update() {
+        Settings.shared.keepHeadphonesHQ ? start() : stop()
+    }
+
+    private func start() {
+        if !listening {
+            for selector in [kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDevices] {
+                var a = address(selector)
+                AudioObjectAddPropertyListenerBlock(system, &a, .main, listener)
+            }
+            listening = true
+        }
+        enforce()
+    }
+
+    private func stop() {
+        guard listening else { return }
+        for selector in [kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDevices] {
+            var a = address(selector)
+            AudioObjectRemovePropertyListenerBlock(system, &a, .main, listener)
+        }
+        listening = false
+    }
+
+    private func enforce() {
+        guard Settings.shared.keepHeadphonesHQ else { return }
+        var input = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var a = address(kAudioHardwarePropertyDefaultInputDevice)
+        guard AudioObjectGetPropertyData(system, &a, 0, nil, &size, &input) == noErr,
+              isBluetooth(input), let builtIn = builtInMic(), builtIn != input else { return }
+        var newInput = builtIn
+        AudioObjectSetPropertyData(system, &a, 0, nil, UInt32(MemoryLayout<AudioObjectID>.size), &newInput)
+    }
+
+    private func transport(_ device: AudioObjectID) -> UInt32 {
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var a = address(kAudioDevicePropertyTransportType)
+        AudioObjectGetPropertyData(device, &a, 0, nil, &size, &value)
+        return value
+    }
+
+    private func isBluetooth(_ device: AudioObjectID) -> Bool {
+        [kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE].contains(transport(device))
+    }
+
+    private func hasInput(_ device: AudioObjectID) -> Bool {
+        var size: UInt32 = 0
+        var a = address(kAudioDevicePropertyStreams, kAudioObjectPropertyScopeInput)
+        return AudioObjectGetPropertyDataSize(device, &a, 0, nil, &size) == noErr && size > 0
+    }
+
+    private func builtInMic() -> AudioObjectID? {
+        var size: UInt32 = 0
+        var a = address(kAudioHardwarePropertyDevices)
+        guard AudioObjectGetPropertyDataSize(system, &a, 0, nil, &size) == noErr else { return nil }
+        var devices = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(system, &a, 0, nil, &size, &devices) == noErr else { return nil }
+        return devices.first { transport($0) == kAudioDeviceTransportTypeBuiltIn && hasInput($0) }
+    }
+}
+
 // MARK: - Camera mirror
 
 /// The built-in camera, shown mirrored in the notch to check yourself before a call.
@@ -755,6 +848,8 @@ final class CameraMirror: ObservableObject {
     @Published private(set) var state: State = .off
     /// The macOS permission prompt is up; the notch stays open meanwhile.
     @Published private(set) var asking = false
+    /// Called when the user has just granted access (to show the mirror right away).
+    var onGranted: (() -> Void)?
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "notch.camera")
     private var configured = false  // touched on `queue` only
@@ -771,7 +866,12 @@ final class CameraMirror: ObservableObject {
             AVCaptureDevice.requestAccess(for: .video) { ok in
                 DispatchQueue.main.async {
                     self.asking = false
-                    if !ok { self.state = .denied } else if self.wanted { self.run() } else { self.state = .off }
+                    if !ok {
+                        self.state = .denied
+                    } else {
+                        if self.wanted { self.run() } else { self.state = .off }
+                        self.onGranted?()
+                    }
                 }
             }
         default:
@@ -1341,6 +1441,8 @@ struct NotchView: View {
             }
             Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
             Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
+            Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
+                .help(L("headphonesHQHint"))
             Toggle(L("launchAtLogin"), isOn: Binding(
                 get: { SMAppService.mainApp.status == .enabled },
                 set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
@@ -1772,6 +1874,8 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 9) {
                     Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
                     Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
+            Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
+                .help(L("headphonesHQHint"))
                     // Only for people who have the Foco study-timer app.
                     if appURL(FocoTimer.bundleID) != nil {
                         Toggle(L("showFoco"), isOn: $settings.showFoco)
@@ -1942,6 +2046,8 @@ final class NotchController {
     let panel: NotchPanel
     let displayID: CGDirectDisplayID
     var peekUntil = Date.distantPast
+    /// Keeps the notch open on the mirror for a moment, e.g. right after camera access was granted.
+    var mirrorHoldUntil = Date.distantPast
     private var hoverSince: Date?
     private var leftSince: Date?
 
@@ -2032,7 +2138,8 @@ final class NotchController {
             ? (inside || now.timeIntervalSince(leftSince ?? now) < 0.25)
             : (inside && now.timeIntervalSince(hoverSince ?? now) >= 0.12)
         // Stay open while macOS asks for camera permission (the mouse goes to that prompt).
-        let want = hovering || dragNear || camera.asking || (now < peekUntil && (np.hasMedia || foco.session != nil))
+        let want = hovering || dragNear || camera.asking || now < mirrorHoldUntil
+            || (now < peekUntil && (np.hasMedia || foco.session != nil))
         // Dragging a file in needs the drop zone, not the mirror.
         if fileDrag && ui.mirrorOn { ui.mirrorOn = false }
 
@@ -2058,6 +2165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let shelf = Shelf()
     let foco = FocoTimer()
     let camera = CameraMirror()
+    let audioGuard = AudioGuard()
     var controllers: [NotchController] = []
     var hoverTimer: Timer?
     private var hot = false
@@ -2081,6 +2189,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         np.start()
         foco.start()
         if !Settings.shared.onboarded { SettingsWindow.shared.show(welcome: true) }
+        audioGuard.update()
+        NotificationCenter.default.addObserver(forName: Settings.audioChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.audioGuard.update()
+        }
+        // Coming back from the permission prompt, show the mirror without another click.
+        camera.onGranted = { [weak self] in
+            guard let c = self?.controllers.first(where: { $0.screen?.hasNotch == true }) ?? self?.controllers.first else { return }
+            c.mirrorHoldUntil = Date().addingTimeInterval(6)
+            c.ui.mirrorOn = true
+        }
         setTickRate(hot: true)
         // Mouse events wake the fast loop the moment the cursor heads for a notch
         // (mouse events need no Accessibility permission).
