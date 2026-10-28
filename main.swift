@@ -60,6 +60,15 @@ final class Settings: ObservableObject {
     /// Camera mirror in the notch.
     @Published var mirrorEnabled: Bool { didSet { d.set(mirrorEnabled, forKey: "mirrorEnabled") } }
     static let ocrChanged = Notification.Name("NotchUser.ocrSettingChanged")
+
+    /// How the notch looks: as plain as the hardware, lifted with depth, or see-through glass.
+    enum Style: String, CaseIterable, Identifiable {
+        case basic, elevated, glass
+        var id: String { rawValue }
+        var title: String { L("style." + rawValue) }
+    }
+    @Published var style: Style { didSet { d.set(style.rawValue, forKey: "style") } }
+
     var onboarded: Bool {
         get { d.bool(forKey: "onboarded") }
         set { d.set(newValue, forKey: "onboarded") }
@@ -73,6 +82,7 @@ final class Settings: ObservableObject {
         keepHeadphonesHQ = d.bool(forKey: "keepHeadphonesHQ")
         ocrEnabled = d.bool(forKey: "ocrEnabled")
         mirrorEnabled = d.bool(forKey: "mirrorEnabled")
+        style = Style(rawValue: d.string(forKey: "style") ?? "") ?? .basic
     }
 
     /// The language actually used: the chosen one, or the Mac's if it is one we have.
@@ -214,6 +224,14 @@ enum Strings {
                          "es": "NotchUser se volverá a abrir para activar la Grabación de pantalla."],
         "getStarted": ["en": "Get started", "pt": "Começar", "es": "Empezar"],
         "done": ["en": "Done", "pt": "Pronto", "es": "Listo"],
+        // Appearance
+        "appearance": ["en": "Appearance", "pt": "Aparência", "es": "Apariencia"],
+        "style.basic": ["en": "Basic", "pt": "Básico", "es": "Básico"],
+        "style.elevated": ["en": "Elevated", "pt": "Elevado", "es": "Elevado"],
+        "style.glass": ["en": "Glass", "pt": "Vidro", "es": "Cristal"],
+        "styleHint": ["en": "Elevated adds depth and lifts the notch under the mouse. Glass makes it see-through, with waves that follow the music.",
+                      "pt": "Elevado dá profundidade e levanta o notch sob o mouse. Vidro deixa ele translúcido, com ondas que seguem a música.",
+                      "es": "Elevado añade profundidad y levanta el notch bajo el ratón. Cristal lo hace translúcido, con ondas que siguen la música."],
     ]
 }
 
@@ -265,6 +283,7 @@ final class NowPlaying: ObservableObject {
     private var pin: (id: String, at: Date)?
     private var mrCurrent: String?          // app the system Now Playing reports right now
     private var helperIn: FileHandle?
+    private var helperFailures = 0
     private var lineBuffer = Data()
     private let queue = DispatchQueue(label: "notch.applescript")
     private var scripts: [String: NSAppleScript] = [:]
@@ -392,8 +411,20 @@ final class NowPlaying: ObservableObject {
         }
         p.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
-                self?.helperIn = nil
-                self?.mrCurrent = nil
+                guard let self else { return }
+                self.helperIn = nil
+                self.lineBuffer.removeAll()
+                // What it was reporting can't be updated any more.
+                if let id = self.mrCurrent, self.sources[id]?.player == nil { self.remove(id) }
+                self.mrCurrent = nil
+                self.reselect()
+                // It can stop (e.g. around sleep); start it again so browsers keep showing up.
+                // Waits longer after each failure in a row, up to a minute.
+                let delay = min(60, 3 * pow(2, Double(self.helperFailures)))
+                self.helperFailures += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    if self?.helperIn == nil { _ = self?.startHelper() }
+                }
             }
         }
         do { try p.run() } catch { return false }
@@ -402,6 +433,7 @@ final class NowPlaying: ObservableObject {
     }
 
     private func consume(_ d: Data) {
+        helperFailures = 0
         lineBuffer.append(d)
         while let nl = lineBuffer.firstIndex(of: 10) {
             let line = lineBuffer.subdata(in: lineBuffer.startIndex..<nl)
@@ -458,7 +490,11 @@ final class NowPlaying: ObservableObject {
           else
             set s to "paused"
           end if
-          return (name of t) & "||" & (artist of t) & "||" & (((duration of t) / 1000) as text) & "||" & ((player position) as text) & "||" & s & "||false||" & (artwork url of t)
+          set art to ""
+          try
+            set art to (artwork url of t) as text
+          end try
+          return (name of t) & "||" & (artist of t) & "||" & (((duration of t) / 1000) as text) & "||" & ((player position) as text) & "||" & s & "||false||" & art
         end tell
         """,
     ]
@@ -1170,6 +1206,7 @@ final class NotchState: ObservableObject {
     @Published var dragging = false      // a file is being dragged somewhere on screen
     @Published var dropTargeted = false  // ...and it is over the notch
     @Published var bump = false          // brief squash-and-stretch when something new arrives
+    @Published var hovering = false      // the mouse is on the closed notch (it lifts, in the richer styles)
     @Published var mirrorOn = false      // the camera mirror replaces the usual sections
     /// A short message (e.g. "Text copied") shown on its own for a moment.
     struct Toast: Equatable {
@@ -1279,6 +1316,154 @@ struct Waveform: View {
             .frame(height: 16)
             .animation(.easeOut(duration: 0.25), value: playing)
         }
+    }
+}
+
+/// For the Glass style: a small wave flowing through the pill instead of the bars.
+struct MiniWave: View {
+    var playing: Bool
+    var color: Color
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playing)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            Canvas { g, size in
+                let mid = size.height / 2
+                for i in 0..<2 {
+                    let k = Double(i)
+                    // Louder and quieter moments, so it feels alive rather than a loop.
+                    let energy = playing ? 0.55 + 0.45 * abs(sin(t * (1.3 + k * 0.7) + k)) : 0.12
+                    var path = Path()
+                    var x: CGFloat = 0
+                    while x <= size.width {
+                        let u = Double(x / size.width)
+                        let taper = sin(.pi * u)  // both ends meet in the middle, like Siri's wave
+                        let y = mid + CGFloat(sin(u * 2 * .pi * (1.6 + k * 0.5) - t * (5 + k * 2)) * taper * energy) * mid * 0.85
+                        if x == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
+                        x += 1
+                    }
+                    g.stroke(path, with: .color(color.opacity(i == 0 ? 1 : 0.45)),
+                             style: StrokeStyle(lineWidth: i == 0 ? 1.8 : 1.2, lineCap: .round))
+                }
+            }
+        }
+        .frame(width: 26, height: 16)
+    }
+}
+
+/// For the Glass style: soft waves in the album's color drifting along the bottom of the panel.
+struct FlowingWaves: View {
+    var playing: Bool
+    var color: Color
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playing)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            Canvas { g, size in
+                for i in 0..<3 {
+                    let k = Double(i)
+                    let h = Double(size.height)
+                    let breathe: Double = 0.7 + 0.3 * sin(t * (0.8 + 0.3 * k) + k * 2)
+                    let amp: Double = h * (0.13 + 0.05 * k) * breathe
+                    let base: Double = h * (0.42 + 0.14 * k)
+                    let length: Double = Double(size.width) / (1.0 + 0.4 * k)
+                    let shift: Double = t * (0.9 + 0.45 * k) * (i % 2 == 0 ? 1 : -1)
+                    var path = Path()
+                    path.move(to: CGPoint(x: 0, y: size.height))
+                    var x: CGFloat = 0
+                    while x <= size.width + 6 {
+                        let phase: Double = Double(x) / length * 2 * .pi + shift
+                        let y = CGFloat(base + amp * sin(phase))
+                        path.addLine(to: CGPoint(x: x, y: y))
+                        x += 6
+                    }
+                    path.addLine(to: CGPoint(x: size.width, y: size.height))
+                    path.closeSubpath()
+                    g.fill(path, with: .linearGradient(Gradient(colors: [color.opacity(0.32 - 0.07 * k), color.opacity(0)]),
+                                                       startPoint: CGPoint(x: 0, y: base - amp), endPoint: CGPoint(x: 0, y: size.height)))
+                }
+            }
+        }
+        .opacity(playing ? 1 : 0.4)
+        .animation(.easeInOut(duration: 0.6), value: playing)
+        .allowsHitTesting(false)
+    }
+}
+
+/// The open panel "materializes": out of a blur, slightly smaller and higher.
+struct Materialize: ViewModifier {
+    var amount: CGFloat
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: 10 * amount)
+            .scaleEffect(1 - 0.08 * amount, anchor: .top)
+            .offset(y: -8 * amount)
+            .opacity(1 - amount)
+    }
+}
+
+/// Three small notch previews to choose the style from.
+struct StylePicker: View {
+    @ObservedObject var settings = Settings.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ForEach(Settings.Style.allCases) { style in
+                    let on = settings.style == style
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { settings.style = style }
+                    } label: {
+                        VStack(spacing: 7) {
+                            StylePreview(style: style).frame(height: 56)
+                            Text(style.title).font(.system(size: 11.5, weight: on ? .semibold : .medium))
+                                .foregroundColor(.white.opacity(on ? 1 : 0.7))
+                        }
+                        .padding(7)
+                        .frame(maxWidth: .infinity)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(on ? 0.12 : 0.03)))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(on ? 0.95 : 0), lineWidth: 1.5))
+                        .scaleEffect(on ? 1 : 0.97)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text(L("styleHint"))
+                .font(.system(size: 10.5))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct StylePreview: View {
+    var style: Settings.Style
+    var body: some View {
+        let shape = NotchShape(topR: 4, botR: 13)
+        ZStack(alignment: .top) {
+            // A colorful "wallpaper", so the glass has something to show through.
+            LinearGradient(colors: [Color(red: 0.32, green: 0.24, blue: 0.62), Color(red: 0.93, green: 0.45, blue: 0.42)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Circle().fill(Color(red: 0.98, green: 0.78, blue: 0.35)).frame(width: 34).offset(x: 24, y: 22).blur(radius: 2)
+            ZStack(alignment: .bottom) {
+                switch style {
+                case .basic:
+                    shape.fill(Color.black.opacity(0.94))
+                case .elevated:
+                    shape.fill(Color.black.opacity(0.9))
+                        .overlay(shape.stroke(Color.white.opacity(0.18), lineWidth: 0.6))
+                        .shadow(color: .black.opacity(0.55), radius: 5, y: 4)
+                        .shadow(color: .black.opacity(0.3), radius: 10, y: 8)
+                case .glass:
+                    shape.fill(.ultraThinMaterial)
+                        .overlay(shape.fill(LinearGradient(colors: [.black.opacity(0.65), .black.opacity(0.1)], startPoint: .top, endPoint: .bottom)))
+                        .overlay(shape.stroke(LinearGradient(colors: [.white.opacity(0.05), .white.opacity(0.5)], startPoint: .top, endPoint: .bottom), lineWidth: 0.7))
+                    MiniWave(playing: true, color: .white).scaleEffect(0.8).padding(.bottom, 4)
+                }
+            }
+            .frame(width: 74, height: 34)
+            .environment(\.colorScheme, .dark)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 }
 
@@ -1570,6 +1755,10 @@ struct NotchView: View {
         let size = ui.size(extended: extended)
         let shape = NotchShape(topR: ui.expanded ? 12 : 6, botR: ui.expanded ? 32 : 10)
         let total = ui.expandedSize.height
+        let style = settings.style
+        let glass = style == .glass
+        let lifted = style != .basic
+        let lift = lifted && ui.hovering && !ui.expanded
 
         ZStack(alignment: .top) {
             // Expanded: frosted glass tinted by the album art, fading into solid black
@@ -1577,12 +1766,22 @@ struct NotchView: View {
             if ui.expanded {
             ZStack(alignment: .top) {
                 VisualEffect()
-                Color.black.opacity(0.28)
+                Color.black.opacity(glass ? 0.08 : 0.28)
                 if ui.showMedia, let art = np.artwork {
                     Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
                         .frame(width: ui.expandedSize.width, height: total)
                         .blur(radius: 50)
-                        .opacity(0.4)
+                        .saturation(glass ? 1.5 : 1)
+                        .opacity(glass ? 0.55 : 0.4)
+                }
+                if glass {
+                    // A sheen from above, like light on a pane of glass.
+                    LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.03), .clear], startPoint: .top, endPoint: .bottom)
+                    if ui.showMedia && !ui.mirrorOn {
+                        FlowingWaves(playing: np.isPlaying, color: np.accent)
+                            .frame(height: 100)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                    }
                 }
                 LinearGradient(stops: [
                     .init(color: .black, location: 0),
@@ -1599,7 +1798,11 @@ struct NotchView: View {
 
             if ui.expanded {
                 expanded.transition(.asymmetric(
-                    insertion: .opacity.combined(with: .scale(scale: 0.9, anchor: .top)).animation(.spring(response: 0.4, dampingFraction: 0.8).delay(0.05)),
+                    insertion: lifted
+                        ? AnyTransition.modifier(active: Materialize(amount: 1), identity: Materialize(amount: 0))
+                            .animation(.spring(response: 0.45, dampingFraction: 0.82).delay(0.04))
+                        : AnyTransition.opacity.combined(with: .scale(scale: 0.9, anchor: .top))
+                            .animation(.spring(response: 0.4, dampingFraction: 0.8).delay(0.05)),
                     removal: .opacity.animation(.easeOut(duration: 0.12))))
             } else if extended {
                 collapsed.transition(.opacity)
@@ -1613,22 +1816,29 @@ struct NotchView: View {
         // Glass rim: a soft inner glow plus a hairline that brightens toward the bottom
         // (the top stays black so it still merges with the physical notch).
         .overlay(
-            shape.stroke(Color.white.opacity(0.10), lineWidth: 8)
+            shape.stroke(Color.white.opacity(glass ? 0.16 : 0.10), lineWidth: 8)
                 .blur(radius: ui.expanded ? 6 : 0)
                 .clipShape(shape)
                 .opacity(ui.expanded ? 1 : 0))
         .overlay(
             shape.stroke(LinearGradient(stops: [
                 .init(color: .white.opacity(0), location: 0),
-                .init(color: .white.opacity(0.10), location: 0.35),
-                .init(color: .white.opacity(0.28), location: 1),
+                .init(color: .white.opacity(glass ? 0.16 : 0.10), location: 0.35),
+                .init(color: .white.opacity(glass ? 0.45 : 0.28), location: 1),
             ], startPoint: .top, endPoint: .bottom), lineWidth: 1)
                 .opacity(ui.expanded ? 1 : 0))
         .scaleEffect(x: ui.bump ? 1.07 : 1, y: ui.bump ? 1.16 : 1, anchor: .top)
         .animation(.spring(response: 0.22, dampingFraction: 0.32), value: ui.bump)
-        // Halo in the album's color, then the drop shadow.
-        .shadow(color: (ui.showMedia ? np.accent : .white).opacity(ui.expanded ? 0.18 : 0), radius: ui.expanded ? 24 : 0)
-        .shadow(color: .black.opacity(ui.expanded ? 0.45 : 0), radius: ui.expanded ? 18 : 0, y: ui.expanded ? 8 : 0)
+        // Elevated and Glass: the closed notch rises a little under the mouse before it opens.
+        .scaleEffect(x: lift ? 1.04 : 1, y: lift ? 1.12 : 1, anchor: .top)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: lift)
+        // Halo in the album's color, then the drop shadow (two layers when elevated: close and ambient).
+        .shadow(color: (ui.showMedia ? np.accent : .white).opacity(ui.expanded ? (glass ? 0.3 : lifted ? 0.22 : 0.18) : 0),
+                radius: ui.expanded ? (lifted ? 32 : 24) : 0)
+        .shadow(color: .black.opacity(ui.expanded || lift ? 0.45 : 0),
+                radius: ui.expanded ? (lifted ? 10 : 18) : lift ? 6 : 0, y: ui.expanded ? (lifted ? 5 : 8) : lift ? 3 : 0)
+        .shadow(color: .black.opacity(lifted && ui.expanded ? 0.35 : 0), radius: lifted && ui.expanded ? 36 : 0,
+                y: lifted && ui.expanded ? 20 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environment(\.colorScheme, .dark)
         .animation(.spring(response: 0.42, dampingFraction: 0.76), value: ui.expanded)
@@ -1644,6 +1854,11 @@ struct NotchView: View {
             Toggle(L("launchAtLogin"), isOn: Binding(
                 get: { SMAppService.mainApp.status == .enabled },
                 set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
+            Menu(L("appearance")) {
+                ForEach(Settings.Style.allCases) { s in
+                    Toggle(s.title, isOn: Binding(get: { settings.style == s }, set: { if $0 { settings.style = s } }))
+                }
+            }
             Menu(L("addons")) {
                 Toggle(L("addonOCR"), isOn: $settings.ocrEnabled)
                 Toggle(L("addonMirror"), isOn: $settings.mirrorEnabled)
@@ -1685,7 +1900,7 @@ struct NotchView: View {
                         .fixedSize()
                 }
             } else if np.hasMedia {
-                Waveform(playing: np.isPlaying, color: np.accent)
+                musicIndicator
             } else {
                 Text("\(shelf.items.count)").font(.system(size: 12, weight: .semibold).monospacedDigit())
             }
@@ -1693,6 +1908,15 @@ struct NotchView: View {
         .foregroundColor(.white.opacity(0.8))
         .padding(.horizontal, 13)
         .frame(width: ui.notchW + ui.side * 2, height: ui.notchH)
+    }
+
+    /// Bars that dance with the music, or a flowing wave in the Glass style.
+    @ViewBuilder private var musicIndicator: some View {
+        if settings.style == .glass {
+            MiniWave(playing: np.isPlaying, color: np.accent)
+        } else {
+            Waveform(playing: np.isPlaying, color: np.accent)
+        }
     }
 
     /// App icons of every source; tap one to show it, tap the shown one to open the app.
@@ -1776,7 +2000,11 @@ struct NotchView: View {
         VStack(spacing: 6) {
             HStack(spacing: 14) {
                 Artwork(image: np.artwork, size: 56)
-                    .shadow(color: np.accent.opacity(0.35), radius: 10, y: 3)
+                    // Richer styles: the cover sits back a little while paused, like Apple Music.
+                    .scaleEffect(settings.style != .basic && !np.isPlaying ? 0.9 : 1)
+                    .shadow(color: np.accent.opacity(settings.style != .basic && np.isPlaying ? 0.5 : 0.35),
+                            radius: settings.style != .basic && np.isPlaying ? 14 : 10, y: 3)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.65), value: np.isPlaying)
                     .onTapGesture { np.openPlayer() }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(np.title).font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
@@ -1786,10 +2014,11 @@ struct NotchView: View {
                 .id(np.title + np.artist)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 Spacer(minLength: 8)
-                Waveform(playing: np.isPlaying, color: np.accent)
+                musicIndicator
             }
             .animation(.easeInOut(duration: 0.3), value: np.title + np.artist)
-            TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
+            // 20 updates a second while playing, so the bar glides instead of stepping.
+            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !np.isPlaying)) { ctx in
                 let pos = np.currentPosition(at: ctx.date)
                 HStack(spacing: 10) {
                     Text(fmt(pos)).frame(width: 34, alignment: .leading)
@@ -2226,6 +2455,10 @@ struct SettingsView: View {
                 .labelsHidden()
             }
 
+            glassSection(L("appearance")) {
+                StylePicker()
+            }
+
             glassSection(L("permissions")) {
                 VStack(spacing: 10) {
                     PermissionsList(perms: perms)
@@ -2338,7 +2571,7 @@ struct OnboardingView: View {
         VStack(spacing: 14) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 104, height: 104)
+                .frame(width: 88, height: 88)
                 .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
             Text(L("welcomeTitle")).font(.system(size: 26, weight: .bold))
             Text(L("welcomeSub"))
@@ -2346,13 +2579,16 @@ struct OnboardingView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer().frame(height: 18)
+            Spacer().frame(height: 8)
             glassSection(L("language")) {
                 Picker("", selection: $settings.language) {
                     ForEach(Settings.Language.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+            }
+            glassSection(L("appearance")) {
+                StylePicker()
             }
         }
     }
@@ -2678,6 +2914,8 @@ final class NotchController {
             }
         }
         if inside { peekUntil = .distantPast }
+        let lift = inside && !ui.expanded
+        if ui.hovering != lift { ui.hovering = lift }
         let ignore = !(inside || dragNear)
         if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
     }
