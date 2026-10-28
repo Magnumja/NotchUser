@@ -27,6 +27,11 @@
   <img src="Assets/screens/hero.png" width="820" alt="NotchUser aberto sob o notch, tocando uma música do Spotify">
 </p>
 
+<p align="center">
+  <a href="Assets/video/NotchUser-Promo.mp4"><img src="Assets/video/poster.png" width="640" alt="Assistir ao filme de 30 segundos do NotchUser"></a>
+  <br><sub>🎬 <a href="Assets/video/NotchUser-Promo.mp4"><b>Assista ao filme de 30 segundos</b></a>: música, a prateleira e os três estilos em movimento.</sub>
+</p>
+
 ---
 
 ## Por que o NotchUser
@@ -69,6 +74,11 @@ Escolha na apresentação, nos Ajustes ou com o botão direito no notch → **Ap
 - Arquivos, links e texto, com miniaturas. Clique para selecionar vários e arraste todos juntos.
 - Botão direito: Abrir, Mostrar no Finder, Copiar, AirDrop. Arquivos movidos ou apagados somem sozinhos.
 - Enquanto você arrasta algo, uma área grande para soltar aparece sob o notch, pra você nunca bater na borda da tela sem querer.
+
+<p align="center">
+  <img src="Assets/screens/shelf.gif" width="640" alt="Arrastando um arquivo até a prateleira do notch e depois para outra pasta">
+  <br><sub>Arrasta. Solta. Pronto.</sub>
+</p>
 
 **Complementos opcionais** (desligados até você ligar)
 - **Copiar texto da tela:** aperte **⌘⇧2**, selecione qualquer área (vídeo, imagem, PDF travado, slide numa chamada) e o texto vai pra área de transferência. O reconhecimento roda no seu Mac; a imagem é apagada logo depois.

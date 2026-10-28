@@ -28,6 +28,11 @@
   <img src="Assets/screens/hero.png" width="820" alt="NotchUser open under the notch, playing a song from Spotify">
 </p>
 
+<p align="center">
+  <a href="Assets/video/NotchUser-Promo.mp4"><img src="Assets/video/poster.png" width="640" alt="Play the 30-second NotchUser film"></a>
+  <br><sub>🎬 <a href="Assets/video/NotchUser-Promo.mp4"><b>Watch the 30-second film</b></a>: music, the shelf and the three styles in motion.</sub>
+</p>
+
 ---
 
 ## Why NotchUser
@@ -70,6 +75,11 @@ Pick one in the welcome tour, in Settings, or with a right-click on the notch �
 - Files, links and text, with thumbnails. Click to select several and drag them all out together.
 - Right-click for Open, Show in Finder, Copy, AirDrop. Files that were moved or deleted disappear on their own.
 - While you drag something, a large drop zone opens below the notch, so you never hit the top edge by accident.
+
+<p align="center">
+  <img src="Assets/screens/shelf.gif" width="640" alt="Dragging a file into the notch shelf and out into another folder">
+  <br><sub>Drag. Drop. Done.</sub>
+</p>
 
 **Optional add-ons** (off until you turn them on)
 - **Copy text from the screen:** press **⌘⇧2**, select any area (a video, an image, a locked PDF, a slide in a call), and its text goes to the clipboard. Recognition runs on your Mac; the image is deleted right after.
