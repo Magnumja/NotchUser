@@ -32,7 +32,9 @@ final class Settings: ObservableObject {
 
     private let d = UserDefaults.standard
     @Published var language: Language { didSet { d.set(language.rawValue, forKey: "language") } }
-    @Published var peekOnTrackChange: Bool { didSet { d.set(peekOnTrackChange, forKey: "peekOnTrackChange") } }
+    /// Open the notch for a moment when the song changes. Off by default: while listening, it
+    /// opening at every song gets in the way (the closed notch still gives a small hop).
+    @Published var peekOnTrackChange: Bool { didSet { d.set(peekOnTrackChange, forKey: "openOnTrackChange") } }
     /// Pill at the top of displays without a notch (external monitors).
     @Published var showOnAllScreens: Bool {
         didSet {
@@ -68,6 +70,14 @@ final class Settings: ObservableObject {
         var title: String { L("style." + rawValue) }
     }
     @Published var style: Style { didSet { d.set(style.rawValue, forKey: "style") } }
+    /// Asking macOS is a round trip to a system service, too slow to do on every redraw of the
+    /// notch (its menu is rebuilt each time), so it's read once and kept here.
+    @Published var launchAtLogin = SMAppService.mainApp.status == .enabled {
+        didSet {
+            guard launchAtLogin != oldValue else { return }
+            try? launchAtLogin ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+        }
+    }
 
     var onboarded: Bool {
         get { d.bool(forKey: "onboarded") }
@@ -76,7 +86,7 @@ final class Settings: ObservableObject {
 
     private init() {
         language = Language(rawValue: d.string(forKey: "language") ?? "") ?? .system
-        peekOnTrackChange = d.object(forKey: "peekOnTrackChange") as? Bool ?? true
+        peekOnTrackChange = d.bool(forKey: "openOnTrackChange")
         showOnAllScreens = d.object(forKey: "showOnAllScreens") as? Bool ?? true
         showFoco = d.object(forKey: "showFoco") as? Bool ?? true
         keepHeadphonesHQ = d.bool(forKey: "keepHeadphonesHQ")
@@ -188,6 +198,7 @@ enum Strings {
         "openSettings": ["en": "Open Settings", "pt": "Abrir Ajustes", "es": "Abrir Ajustes"],
         "notInstalled": ["en": "Not installed", "pt": "Não instalado", "es": "No instalado"],
         "behavior": ["en": "Behavior", "pt": "Comportamento", "es": "Comportamiento"],
+        "general": ["en": "General", "pt": "Geral", "es": "General"],
         "tip": ["en": "Hover the notch to open it. Right-click it for options and Settings.",
                 "pt": "Passe o mouse no notch pra abrir. Clique com o botão direito pra ver opções e Ajustes.",
                 "es": "Pasa el ratón por el notch para abrirlo. Haz clic derecho para ver opciones y Ajustes."],
@@ -229,9 +240,9 @@ enum Strings {
         "style.basic": ["en": "Basic", "pt": "Básico", "es": "Básico"],
         "style.elevated": ["en": "Elevated", "pt": "Elevado", "es": "Elevado"],
         "style.glass": ["en": "Glass", "pt": "Vidro", "es": "Cristal"],
-        "styleHint": ["en": "Elevated adds depth and lifts the notch under the mouse. Glass makes it see-through, with waves that follow the music.",
-                      "pt": "Elevado dá profundidade e levanta o notch sob o mouse. Vidro deixa ele translúcido, com ondas que seguem a música.",
-                      "es": "Elevado añade profundidad y levanta el notch bajo el ratón. Cristal lo hace translúcido, con ondas que siguen la música."],
+        "styleHint": ["en": "Elevated: depth, a glow under the notch and a cover that tilts toward the mouse. Glass: Liquid Glass with waves that follow the music.",
+                      "pt": "Elevado: profundidade, um brilho sob o notch e a capa que inclina na direção do mouse. Vidro: Liquid Glass com ondas que seguem a música.",
+                      "es": "Elevado: profundidad, un brillo bajo el notch y una portada que se inclina hacia el ratón. Cristal: Liquid Glass con ondas que siguen la música."],
     ]
 }
 
@@ -272,15 +283,35 @@ struct Source {
 }
 
 func appURL(_ bundleID: String) -> URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
+// Looked up once per app: the open notch asks for them on every redraw.
+private var appNames: [String: String] = [:]
+private var appIcons: [String: NSImage?] = [:]
+
 func appName(_ bundleID: String) -> String {
+    if let n = appNames[bundleID] { return n }
+    let n = lookUpAppName(bundleID)
+    appNames[bundleID] = n
+    return n
+}
+func appIcon(_ bundleID: String) -> NSImage? {
+    if let i = appIcons[bundleID] { return i }
+    let i = appURL(bundleID).map { NSWorkspace.shared.icon(forFile: $0.path) }
+    appIcons[bundleID] = i
+    return i
+}
+private func lookUpAppName(_ bundleID: String) -> String {
     appURL(bundleID).map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? bundleID
 }
-func appIcon(_ bundleID: String) -> NSImage? { appURL(bundleID).map { NSWorkspace.shared.icon(forFile: $0.path) } }
 
 final class NowPlaying: ObservableObject {
     @Published private(set) var sources: [String: Source] = [:]
     @Published private(set) var selectedID: String?
     private var pin: (id: String, at: Date)?
+    /// Set by play/pause: players (browsers especially) take a moment to report the new state,
+    /// and a late report of the old one would flip the button back and forth.
+    private var expectPlaying: (id: String, value: Bool, until: Date)?
+    /// Browsers often report "nothing" for an instant between two songs; that only counts if it lasts.
+    private var pendingClear: DispatchWorkItem?
     private var mrCurrent: String?          // app the system Now Playing reports right now
     private var helperIn: FileHandle?
     private var helperFailures = 0
@@ -321,8 +352,12 @@ final class NowPlaying: ObservableObject {
 
     // MARK: Sources
 
-    private func upsert(_ id: String, title: String, artist: String, duration: Double, position: Double, playing: Bool) {
+    private func upsert(_ id: String, title: String, artist: String, duration: Double, position: Double, playing reported: Bool) {
         let now = Date()
+        var playing = reported
+        if let e = expectPlaying, e.id == id {
+            if now < e.until && reported != e.value { playing = e.value } else { expectPlaying = nil }
+        }
         var s = sources[id] ?? Source(bundleID: id)
         let newTrack = s.title != title || s.artist != artist
         let hadTrack = !s.title.isEmpty
@@ -347,9 +382,21 @@ final class NowPlaying: ObservableObject {
     }
 
     private func setArtwork(_ id: String, _ img: NSImage?) {
-        guard sources[id] != nil else { return }
+        guard let s = sources[id] else { return }
+        guard let img else {
+            // Players report a new song first and its cover a moment later. Clearing right away
+            // would flash the placeholder and a white glow in between, so the old cover and color
+            // stay a little longer, and only go if no cover arrives for this song.
+            let track = s.title + "|" + s.artist
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self, let now = self.sources[id], now.title + "|" + now.artist == track,
+                      now.artwork === s.artwork, now.artwork != nil else { return }
+                self.sources[id]?.artwork = nil
+            }
+            return
+        }
         sources[id]?.artwork = img
-        sources[id]?.accent = img.map(averageColor) ?? .white
+        sources[id]?.accent = averageColor(img)
     }
 
     private func remove(_ id: String) {
@@ -444,11 +491,20 @@ final class NowPlaying: ObservableObject {
 
     private func applyHelper(_ o: [String: Any]) {
         guard let t = o["title"] as? String else {
-            if let id = mrCurrent, sources[id]?.player == nil { remove(id) }
-            mrCurrent = nil
-            reselect()
+            guard pendingClear == nil else { return }
+            let clear = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.pendingClear = nil
+                if let id = self.mrCurrent, self.sources[id]?.player == nil { self.remove(id) }
+                self.mrCurrent = nil
+                self.reselect()
+            }
+            pendingClear = clear
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: clear)
             return
         }
+        pendingClear?.cancel()
+        pendingClear = nil
         let id = (o["bundle"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "unknown"
         mrCurrent = id
         upsert(id, title: t, artist: o["artist"] as? String ?? "",
@@ -538,7 +594,8 @@ final class NowPlaying: ObservableObject {
             let fav = f[5] == "true"
             if p == .music, sources[id]?.favorited != fav { sources[id]?.favorited = fav }
             let trackKey = f[0] + "|" + f[1]
-            if sources[id]?.artwork == nil && sources[id]?.artRequested != trackKey {
+            // Once per song (artRequested is reset when the song changes).
+            if sources[id]?.artRequested != trackKey {
                 sources[id]?.artRequested = trackKey
                 loadArtwork(p, url: f[6], trackKey: trackKey)
             }
@@ -594,6 +651,7 @@ final class NowPlaying: ObservableObject {
         s.playing.toggle()
         if s.playing { s.startedAt = Date() }
         sources[id] = s
+        expectPlaying = (id, s.playing, Date().addingTimeInterval(1.5))
         command("toggle", appleScript: "playpause")
     }
     func next() { command("next", appleScript: "next track") }
@@ -649,7 +707,10 @@ final class FocoTimer: ObservableObject {
 
     func start() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
+        // Without Foco installed there is nothing to follow; check rarely in case it gets installed.
+        let interval: TimeInterval = appURL(Self.bundleID) != nil ? 2 : 60
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in self?.refresh() }
+        timer?.tolerance = interval * 0.25
     }
 
     func refresh() {
@@ -1301,90 +1362,434 @@ struct VisualEffect: NSViewRepresentable {
     func updateNSView(_ v: NSVisualEffectView, context: Context) { v.material = material }
 }
 
-struct Waveform: View {
-    var playing: Bool
-    var color: Color
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playing)) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: 2) {
-                ForEach(0..<4) { i in
-                    let v = playing ? 0.35 + 0.65 * abs(sin(t * (3.1 + Double(i) * 1.7) + Double(i))) : 0.2
-                    Capsule().fill(color).frame(width: 2.5).frame(height: 16 * v)
-                }
+// MARK: Music animations
+//
+// The bars and waves run in Core Animation: the app hands the motion to macOS once, and the
+// window server plays it. Drawn in SwiftUI they made the whole notch redraw 30 times a second.
+
+/// A layer-hosting view for the animations below.
+class AnimatedLayerView: NSView {
+    let root = CALayer()
+    private var laidOut = CGSize.zero
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        layer = root
+        wantsLayer = true
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        setScale(root, window?.backingScaleFactor ?? 2)
+    }
+    private func setScale(_ l: CALayer, _ scale: CGFloat) {
+        l.contentsScale = scale
+        l.sublayers?.forEach { setScale($0, scale) }
+        if let m = l.mask { setScale(m, scale) }
+    }
+
+    override func layout() {
+        super.layout()
+        guard bounds.size != laidOut, bounds.width > 0, bounds.height > 0 else { return }
+        laidOut = bounds.size
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        rebuild()
+        CATransaction.commit()
+        setScale(root, window?.backingScaleFactor ?? 2)
+    }
+
+    /// Lays out the layers and starts the animations for the current size.
+    func rebuild() {}
+
+    /// Freezes every animation where it is, or lets it continue from there.
+    func setRunning(_ on: Bool) {
+        if on, root.speed == 0 {
+            let pausedAt = root.timeOffset
+            root.speed = 1
+            root.timeOffset = 0
+            root.beginTime = 0
+            root.beginTime = root.convertTime(CACurrentMediaTime(), from: nil) - pausedAt
+        } else if !on, root.speed != 0 {
+            root.timeOffset = root.convertTime(CACurrentMediaTime(), from: nil)
+            root.speed = 0
+        }
+    }
+
+    /// Samples `f` over one loop, so the animation repeats without a seam.
+    static func loop(_ keyPath: String, duration: Double, steps: Int, _ f: (Double) -> Any) -> CAKeyframeAnimation {
+        let a = CAKeyframeAnimation(keyPath: keyPath)
+        a.values = (0...steps).map { f(Double($0) / Double(steps) * duration) }
+        a.duration = duration
+        a.repeatCount = .infinity
+        a.calculationMode = .linear
+        return a
+    }
+}
+
+/// Four bars dancing to the music.
+final class BarsLayerView: AnimatedLayerView {
+    private let bars = (0..<4).map { _ in CALayer() }
+    var playing = false { didSet { if playing != oldValue { animate() } } }
+    var color = NSColor.white.cgColor {
+        didSet { bars.forEach { $0.backgroundColor = color; $0.shadowColor = color } }
+    }
+    var glow = false { didSet { bars.forEach { $0.shadowOpacity = glow ? 0.7 : 0 } } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        for b in bars {
+            b.cornerRadius = 1.25
+            b.backgroundColor = color
+            b.shadowRadius = 3
+            b.shadowOffset = .zero
+            root.addSublayer(b)
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func rebuild() {
+        let w: CGFloat = 2.5, gap: CGFloat = 2
+        let x0 = (bounds.width - (w * 4 + gap * 3)) / 2
+        for (i, b) in bars.enumerated() {
+            b.frame = CGRect(x: x0 + CGFloat(i) * (w + gap), y: (bounds.height - 16) / 2, width: w, height: 16)
+        }
+        animate()
+    }
+
+    private func animate() {
+        for (i, b) in bars.enumerated() {
+            if playing {
+                // |sin| at a different speed per bar, over whole cycles so it loops seamlessly.
+                let speed = 3.1 + Double(i) * 1.7
+                let cycles = max(1, (1.6 * speed / .pi).rounded())
+                let duration = cycles * .pi / speed
+                b.add(Self.loop("transform.scale.y", duration: duration, steps: Int(cycles) * 10) { t in
+                    0.35 + 0.65 * abs(sin(t * speed + Double(i)))
+                }, forKey: "dance")
+                b.transform = CATransform3DIdentity
+            } else {
+                b.removeAnimation(forKey: "dance")
+                b.transform = CATransform3DMakeScale(1, 0.2, 1)  // settles with the implicit fade
             }
-            .frame(height: 16)
-            .animation(.easeOut(duration: 0.25), value: playing)
         }
     }
 }
 
-/// For the Glass style: a small wave flowing through the pill instead of the bars.
-struct MiniWave: View {
-    var playing: Bool
-    var color: Color
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playing)) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            Canvas { g, size in
-                let mid = size.height / 2
-                for i in 0..<2 {
-                    let k = Double(i)
-                    // Louder and quieter moments, so it feels alive rather than a loop.
-                    let energy = playing ? 0.55 + 0.45 * abs(sin(t * (1.3 + k * 0.7) + k)) : 0.12
-                    var path = Path()
-                    var x: CGFloat = 0
-                    while x <= size.width {
-                        let u = Double(x / size.width)
-                        let taper = sin(.pi * u)  // both ends meet in the middle, like Siri's wave
-                        let y = mid + CGFloat(sin(u * 2 * .pi * (1.6 + k * 0.5) - t * (5 + k * 2)) * taper * energy) * mid * 0.85
-                        if x == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
-                        x += 1
-                    }
-                    g.stroke(path, with: .color(color.opacity(i == 0 ? 1 : 0.45)),
-                             style: StrokeStyle(lineWidth: i == 0 ? 1.8 : 1.2, lineCap: .round))
-                }
+/// For the Glass style: a small wave flowing through the pill, Siri-like.
+final class WaveLayerView: AnimatedLayerView {
+    private let lines = [CAShapeLayer(), CAShapeLayer()]
+    var playing = false { didSet { if playing != oldValue { animate() } } }
+    var color = NSColor.white.cgColor {
+        didSet {
+            lines[0].strokeColor = color
+            lines[1].strokeColor = color.copy(alpha: 0.45)
+        }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        for (i, l) in lines.enumerated() {
+            l.fillColor = nil
+            l.lineCap = .round
+            l.lineWidth = i == 0 ? 1.8 : 1.2
+            root.addSublayer(l)
+        }
+        color = NSColor.white.cgColor
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    private func path(phase: Double, frequency: Double) -> CGPath {
+        let p = CGMutablePath()
+        let w = bounds.width, mid = bounds.height / 2
+        for x in stride(from: CGFloat(0), through: w, by: 1) {
+            let u = Double(x / w)
+            let y = mid + CGFloat(sin(u * 2 * .pi * frequency - phase) * sin(.pi * u)) * mid * 0.85  // ends meet in the middle
+            x == 0 ? p.move(to: CGPoint(x: x, y: y)) : p.addLine(to: CGPoint(x: x, y: y))
+        }
+        return p
+    }
+
+    override func rebuild() {
+        lines.forEach { $0.frame = bounds }
+        animate()
+    }
+
+    private func animate() {
+        guard bounds.width > 0 else { return }
+        for (i, l) in lines.enumerated() {
+            let k = Double(i), frequency = 1.6 + k * 0.5
+            if playing {
+                let speed = 5 + k * 2
+                l.add(Self.loop("path", duration: 2 * .pi / speed, steps: 16) { t in self.path(phase: t * speed, frequency: frequency) },
+                      forKey: "flow")
+                // Louder and quieter moments, so it feels alive rather than a loop.
+                let pulse = 1.3 + k * 0.7
+                l.add(Self.loop("transform.scale.y", duration: .pi / pulse, steps: 12) { t in 0.55 + 0.45 * abs(sin(t * pulse + k)) },
+                      forKey: "energy")
+            } else {
+                l.removeAllAnimations()
+                l.path = path(phase: 0, frequency: frequency)
+                l.transform = CATransform3DMakeScale(1, 0.14, 1)
             }
         }
-        .frame(width: 26, height: 16)
     }
 }
 
 /// For the Glass style: soft waves in the album's color drifting along the bottom of the panel.
+final class FlowLayerView: AnimatedLayerView {
+    private let fills = (0..<3).map { _ in CAGradientLayer() }
+    private let shapes = (0..<3).map { _ in CAShapeLayer() }
+    var playing = true {
+        didSet {
+            setRunning(playing)
+            root.opacity = playing ? 1 : 0.4
+        }
+    }
+    var color = NSColor.white.cgColor {
+        didSet {
+            for (i, f) in fills.enumerated() {
+                f.colors = [color.copy(alpha: 0.32 - 0.07 * CGFloat(i))!, color.copy(alpha: 0)!]
+            }
+        }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        for (f, m) in zip(fills, shapes) {
+            m.fillColor = NSColor.black.cgColor
+            f.mask = m
+            root.addSublayer(f)
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func rebuild() {
+        let w = bounds.width, h = bounds.height
+        for (i, (f, m)) in zip(fills, shapes).enumerated() {
+            let k = CGFloat(i)
+            let amp = h * (0.13 + 0.05 * k)
+            let crest = h * (0.42 + 0.14 * k)  // from the top
+            let base = h - crest                // layers count from the bottom
+            let length = w / (1 + 0.4 * k)
+            f.frame = bounds
+            f.startPoint = CGPoint(x: 0.5, y: min(1, (base + amp) / h))
+            f.endPoint = CGPoint(x: 0.5, y: 0)
+
+            // One wave a wavelength wider than the view, slid by exactly one wavelength: a seamless loop.
+            let p = CGMutablePath()
+            let width = w + length
+            p.move(to: CGPoint(x: 0, y: -h * 3))
+            for x in stride(from: CGFloat(0), through: width, by: 4) {
+                p.addLine(to: CGPoint(x: x, y: amp * CGFloat(sin(Double(x / length) * 2 * .pi))))
+            }
+            p.addLine(to: CGPoint(x: width, y: -h * 3))
+            p.closeSubpath()
+            m.path = p
+            m.bounds = CGRect(x: 0, y: -h * 3, width: width, height: h * 3)
+            m.anchorPoint = CGPoint(x: 0.5, y: 1)  // the wave's middle line, so breathing keeps it in place
+            let direction: CGFloat = i % 2 == 0 ? 1 : -1
+            let from = width / 2 - (direction > 0 ? 0 : length)
+            m.position = CGPoint(x: from, y: base)
+
+            let speed = 0.9 + 0.45 * Double(i)
+            let slide = CABasicAnimation(keyPath: "position.x")
+            slide.fromValue = from
+            slide.toValue = from - direction * length
+            slide.duration = 2 * .pi / speed
+            slide.repeatCount = .infinity
+            m.add(slide, forKey: "slide")
+
+            let breathe = CABasicAnimation(keyPath: "transform.scale.y")
+            breathe.fromValue = 0.4
+            breathe.toValue = 1.0
+            breathe.duration = .pi / (0.8 + 0.3 * Double(i))
+            breathe.autoreverses = true
+            breathe.repeatCount = .infinity
+            breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            m.add(breathe, forKey: "breathe")
+        }
+    }
+}
+
+struct Waveform: View {
+    var playing: Bool
+    var color: Color
+    var glow = false
+    var body: some View { BarsRep(playing: playing, color: color, glow: glow).frame(width: 18, height: 16) }
+
+    private struct BarsRep: NSViewRepresentable {
+        var playing: Bool, color: Color, glow: Bool
+        func makeNSView(context: Context) -> BarsLayerView { BarsLayerView(frame: .zero) }
+        func updateNSView(_ v: BarsLayerView, context: Context) {
+            v.color = NSColor(color).cgColor
+            v.glow = glow
+            v.playing = playing
+        }
+    }
+}
+
+struct MiniWave: View {
+    var playing: Bool
+    var color: Color
+    var body: some View { WaveRep(playing: playing, color: color).frame(width: 26, height: 16) }
+
+    private struct WaveRep: NSViewRepresentable {
+        var playing: Bool, color: Color
+        func makeNSView(context: Context) -> WaveLayerView { WaveLayerView(frame: .zero) }
+        func updateNSView(_ v: WaveLayerView, context: Context) {
+            v.color = NSColor(color).cgColor
+            v.playing = playing
+        }
+    }
+}
+
 struct FlowingWaves: View {
     var playing: Bool
     var color: Color
+    var body: some View { FlowRep(playing: playing, color: color).allowsHitTesting(false) }
+
+    private struct FlowRep: NSViewRepresentable {
+        var playing: Bool, color: Color
+        func makeNSView(context: Context) -> FlowLayerView { FlowLayerView(frame: .zero) }
+        func updateNSView(_ v: FlowLayerView, context: Context) {
+            v.color = NSColor(color).cgColor
+            v.playing = playing
+        }
+    }
+}
+
+
+/// A surface inside the panel (the shelf, the playback controls): a piece of Liquid Glass in the
+/// Glass style, a soft lit pod when Elevated, the plain look otherwise (`fallback` = fill opacity).
+struct Surface<S: Shape>: ViewModifier {
+    var style: Settings.Style
+    var shape: S
+    var interactive = false
+    var fallback: Double
+    var elevated: Double
+
+    func body(content: Content) -> some View {
+        switch style {
+        case .glass:
+            if #available(macOS 26.0, *) {
+                content.glassEffect(Glass.clear.interactive(interactive), in: shape)
+            } else {
+                content.background(shape.fill(Color.white.opacity(0.08)))
+            }
+        case .elevated:
+            content
+                .background(shape.fill(LinearGradient(colors: [.white.opacity(elevated * 1.6), .white.opacity(elevated * 0.6)],
+                                                      startPoint: .top, endPoint: .bottom)))
+                .overlay(shape.stroke(LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.03)],
+                                                     startPoint: .top, endPoint: .bottom), lineWidth: 0.6))
+                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+        case .basic:
+            content.background(shape.fill(Color.white.opacity(fallback)))
+        }
+    }
+}
+
+/// One line of text that slides sideways while hovered when it doesn't fit, instead of staying cut.
+struct Marquee: View {
+    var text: String
+    var font: Font
+    var color: Color
+    var height: CGFloat
+    @StateObject private var hover = Box<Bool>(false)
+    @StateObject private var textWidth = Box<CGFloat>(0)
+
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playing)) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            Canvas { g, size in
-                for i in 0..<3 {
-                    let k = Double(i)
-                    let h = Double(size.height)
-                    let breathe: Double = 0.7 + 0.3 * sin(t * (0.8 + 0.3 * k) + k * 2)
-                    let amp: Double = h * (0.13 + 0.05 * k) * breathe
-                    let base: Double = h * (0.42 + 0.14 * k)
-                    let length: Double = Double(size.width) / (1.0 + 0.4 * k)
-                    let shift: Double = t * (0.9 + 0.45 * k) * (i % 2 == 0 ? 1 : -1)
-                    var path = Path()
-                    path.move(to: CGPoint(x: 0, y: size.height))
-                    var x: CGFloat = 0
-                    while x <= size.width + 6 {
-                        let phase: Double = Double(x) / length * 2 * .pi + shift
-                        let y = CGFloat(base + amp * sin(phase))
-                        path.addLine(to: CGPoint(x: x, y: y))
-                        x += 6
-                    }
-                    path.addLine(to: CGPoint(x: size.width, y: size.height))
-                    path.closeSubpath()
-                    g.fill(path, with: .linearGradient(Gradient(colors: [color.opacity(0.32 - 0.07 * k), color.opacity(0)]),
-                                                       startPoint: CGPoint(x: 0, y: base - amp), endPoint: CGPoint(x: 0, y: size.height)))
+        GeometryReader { g in
+            let overflow = max(0, textWidth.value - g.size.width)
+            let rolling = hover.value && overflow > 0
+            ZStack(alignment: .leading) {
+                // Measures the full text once; never shown.
+                Text(text).font(font).fixedSize().hidden()
+                    .background(GeometryReader { t in Color.clear.preference(key: WidthKey.self, value: t.size.width) })
+                if rolling {
+                    Text(text).font(font).foregroundColor(color).fixedSize()
+                        .modifier(Roll(distance: overflow))
+                } else {
+                    Text(text).font(font).foregroundColor(color).lineLimit(1).truncationMode(.tail)
+                        .frame(width: g.size.width, alignment: .leading)
                 }
             }
+            .frame(width: g.size.width, height: height, alignment: .leading)
+            .clipped()
+            .onPreferenceChange(WidthKey.self) { textWidth.value = $0 }
         }
-        .opacity(playing ? 1 : 0.4)
-        .animation(.easeInOut(duration: 0.6), value: playing)
-        .allowsHitTesting(false)
+        .frame(height: height)
+        .contentShape(Rectangle())
+        .onHover { hover.value = $0 }
+    }
+
+    private struct WidthKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+    }
+
+    /// Slides to the end and back, at a calm reading speed, while it's on screen.
+    private struct Roll: ViewModifier {
+        var distance: CGFloat
+        @StateObject private var moved = Box<Bool>(false)
+        func body(content: Content) -> some View {
+            content
+                .offset(x: moved.value ? -distance : 0)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: Double(distance) / 28 + 0.6).delay(0.5).repeatForever(autoreverses: true)) {
+                        moved.value = true
+                    }
+                }
+        }
+    }
+}
+
+/// The panel's backdrop: Apple's Liquid Glass in the Glass style (macOS 26+), frosted otherwise.
+struct PanelMaterial: View {
+    var glass: Bool
+    var tint: Color
+    var body: some View {
+        if glass { liquid } else { VisualEffect() }
+    }
+    @ViewBuilder private var liquid: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear.glassEffect(.clear.tint(tint.opacity(0.22)), in: NotchShape(topR: 12, botR: 32))
+        } else {
+            VisualEffect()
+        }
+    }
+}
+
+/// The cover leans toward the mouse, with a glint that follows it (Elevated and Glass).
+struct Tilt: ViewModifier {
+    var enabled: Bool
+    var size: CGFloat
+    @StateObject private var at = Box<CGPoint?>(nil)  // -1...1 from the center
+
+    func body(content: Content) -> some View {
+        let v = enabled ? at.value : nil
+        content
+            .overlay {
+                if let v {
+                    RadialGradient(colors: [.white.opacity(0.32), .clear],
+                                   center: UnitPoint(x: 0.5 + v.x / 2, y: 0.5 + v.y / 2), startRadius: 0, endRadius: size * 0.75)
+                        .blendMode(.plusLighter)
+                        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                        .allowsHitTesting(false)
+                }
+            }
+            .rotation3DEffect(.degrees(Double(v?.y ?? 0) * -16), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+            .rotation3DEffect(.degrees(Double(v?.x ?? 0) * 16), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
+            .scaleEffect(v == nil ? 1 : 1.07)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: v)
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let p): at.value = CGPoint(x: min(max(p.x / size * 2 - 1, -1), 1), y: min(max(p.y / size * 2 - 1, -1), 1))
+                case .ended: at.value = nil
+                }
+            }
     }
 }
 
@@ -1568,6 +1973,79 @@ final class ClosureMenuItem: NSMenuItem {
     @objc private func run() { handler() }
 }
 
+/// Tells the notch when its menu opens and closes.
+final class MenuWatcher: NSObject, NSMenuDelegate {
+    var onChange: (Bool) -> Void = { _ in }
+    func menuWillOpen(_ menu: NSMenu) { onChange(true) }
+    func menuDidClose(_ menu: NSMenu) { onChange(false) }
+}
+
+/// The notch's right-click menu: native, with icons and sections, built when it opens.
+enum NotchMenu {
+    static func build(for c: NotchController, shelf: Shelf) -> NSMenu {
+        let settings = Settings.shared
+        let m = NSMenu()
+        m.autoenablesItems = false
+        c.menuWatcher.onChange = { [weak c] open in
+            c?.menuOpen = open
+            if !open { c?.leaveDelayFromNow() }
+        }
+        m.delegate = c.menuWatcher
+
+        if settings.ocrEnabled {
+            m.addItem(item(L("copyTextFromScreen"), "text.viewfinder", key: "2", modifiers: [.command, .shift]) {
+                // Let the menu close before the selection crosshair appears.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ScreenText.shared.capture() }
+            })
+        }
+        if settings.mirrorEnabled {
+            m.addItem(item(L("cameraMirror"), "camera") { [weak c] in
+                c?.mirrorHoldUntil = Date().addingTimeInterval(2)
+                c?.ui.mirrorOn = true
+            })
+        }
+        if settings.ocrEnabled || settings.mirrorEnabled { m.addItem(.separator()) }
+
+        m.addItem(.sectionHeader(title: L("appearance")))
+        let icons: [Settings.Style: String] = [.basic: "capsule.fill", .elevated: "square.stack.3d.up.fill", .glass: "drop.fill"]
+        for style in Settings.Style.allCases {
+            m.addItem(item(style.title, icons[style], on: settings.style == style) { settings.style = style })
+        }
+        m.addItem(.separator())
+
+        m.addItem(.sectionHeader(title: L("behavior")))
+        m.addItem(item(L("peekOnTrack"), "music.note", on: settings.peekOnTrackChange) { settings.peekOnTrackChange.toggle() })
+        m.addItem(item(L("otherScreens"), "display.2", on: settings.showOnAllScreens) { settings.showOnAllScreens.toggle() })
+        m.addItem(item(L("launchAtLogin"), "sunrise", on: settings.launchAtLogin) { settings.launchAtLogin.toggle() })
+        let addons = item(L("addons"), "puzzlepiece.extension") {}
+        let sub = NSMenu()
+        sub.autoenablesItems = false
+        sub.addItem(item(L("addonOCR"), "text.viewfinder", on: settings.ocrEnabled) { settings.ocrEnabled.toggle() })
+        sub.addItem(item(L("addonMirror"), "camera", on: settings.mirrorEnabled) { settings.mirrorEnabled.toggle() })
+        sub.addItem(item(L("headphonesHQ"), "headphones", on: settings.keepHeadphonesHQ) { settings.keepHeadphonesHQ.toggle() })
+        addons.submenu = sub
+        m.addItem(addons)
+        m.addItem(.separator())
+
+        if !shelf.isEmpty {
+            m.addItem(item(L("clearShelf"), "trash") { withAnimation(.spring(response: 0.35)) { shelf.clear() } })
+        }
+        m.addItem(item(L("settings"), "gearshape", key: ",") { SettingsWindow.shared.show(welcome: false) })
+        m.addItem(item(L("quit"), "power", key: "q") { NSApp.terminate(nil) })
+        return m
+    }
+
+    private static func item(_ title: String, _ symbol: String?, key: String = "", modifiers: NSEvent.ModifierFlags = .command,
+                             on: Bool? = nil, _ action: @escaping () -> Void) -> NSMenuItem {
+        let i = ClosureMenuItem(title, action)
+        if let symbol { i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+        if let on { i.state = on ? .on : .off }
+        i.keyEquivalent = key
+        if !key.isEmpty { i.keyEquivalentModifierMask = modifiers }
+        return i
+    }
+}
+
 /// Mouse handling for a shelf entry in AppKit: SwiftUI's onDrag can only carry one item,
 /// this starts a real dragging session with every selected entry.
 final class DragSourceView: NSView, NSDraggingSource {
@@ -1640,7 +2118,6 @@ struct DragSource: NSViewRepresentable {
 struct ShelfItem: View {
     let entry: ShelfEntry
     @ObservedObject var shelf: Shelf
-    @ObservedObject var settings = Settings.shared
     @StateObject private var hover = Box<Bool>(false)
 
     private var selected: Bool { shelf.selection.contains(entry.id) }
@@ -1765,14 +2242,18 @@ struct NotchView: View {
             // at the top so it still blends with the physical notch.
             if ui.expanded {
             ZStack(alignment: .top) {
-                VisualEffect()
-                Color.black.opacity(glass ? 0.08 : 0.28)
+                PanelMaterial(glass: glass, tint: ui.showMedia ? np.accent : .white)
+                Color.black.opacity(glass ? 0.22 : 0.28)
                 if ui.showMedia, let art = np.artwork {
                     Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
                         .frame(width: ui.expandedSize.width, height: total)
                         .blur(radius: 50)
                         .saturation(glass ? 1.5 : 1)
                         .opacity(glass ? 0.55 : 0.4)
+                }
+                if style == .elevated {
+                    // Light falling on a raised surface: a little brighter at the top.
+                    LinearGradient(colors: [.white.opacity(0.06), .clear], startPoint: .top, endPoint: .center)
                 }
                 if glass {
                     // A sheen from above, like light on a pane of glass.
@@ -1810,6 +2291,18 @@ struct NotchView: View {
         }
         .frame(width: size.width, height: size.height, alignment: .top)
         .clipShape(shape)
+        // Elevated and Glass: while playing, a soft light in the album's color under the closed notch.
+        .background(alignment: .bottom) {
+            Capsule()
+                .fill(np.accent)
+                .frame(width: size.width * 0.55, height: 3)
+                .blur(radius: 4)
+                .offset(y: 3)
+                .opacity(lifted && np.isPlaying && !ui.expanded ? 0.75 : 0)
+                .animation(.easeInOut(duration: 0.4), value: np.isPlaying)
+                .allowsHitTesting(false)
+        }
+
         .onDrop(of: Shelf.dropTypes, isTargeted: Binding(get: { ui.dropTargeted }, set: { ui.dropTargeted = $0 })) { providers in
             withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { shelf.accept(providers) }
         }
@@ -1844,39 +2337,7 @@ struct NotchView: View {
         .animation(.spring(response: 0.42, dampingFraction: 0.76), value: ui.expanded)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: extended)
         .animation(.spring(response: 0.38, dampingFraction: 0.8), value: ui.expandedSize.height)
-        .contextMenu {
-            if !shelf.isEmpty {
-                Button(L("clearShelf")) { shelf.clear() }
-                Divider()
-            }
-            Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
-            Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
-            Toggle(L("launchAtLogin"), isOn: Binding(
-                get: { SMAppService.mainApp.status == .enabled },
-                set: { on in try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
-            Menu(L("appearance")) {
-                ForEach(Settings.Style.allCases) { s in
-                    Toggle(s.title, isOn: Binding(get: { settings.style == s }, set: { if $0 { settings.style = s } }))
-                }
-            }
-            Menu(L("addons")) {
-                Toggle(L("addonOCR"), isOn: $settings.ocrEnabled)
-                Toggle(L("addonMirror"), isOn: $settings.mirrorEnabled)
-                Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
-            }
-            Divider()
-            if settings.ocrEnabled {
-                Button("\(L("copyTextFromScreen"))  ⌘⇧2") {
-                    // Let the menu close before the selection crosshair appears.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { ScreenText.shared.capture() }
-                }
-            }
-            if settings.mirrorEnabled {
-                Button(L("cameraMirror")) { ui.mirrorOn = true }
-            }
-            Button(L("settings")) { SettingsWindow.shared.show(welcome: false) }
-            Button(L("quit")) { NSApp.terminate(nil) }
-        }
+        .animation(.easeInOut(duration: 0.5), value: np.accent)
     }
 
     private var collapsed: some View {
@@ -1915,7 +2376,7 @@ struct NotchView: View {
         if settings.style == .glass {
             MiniWave(playing: np.isPlaying, color: np.accent)
         } else {
-            Waveform(playing: np.isPlaying, color: np.accent)
+            Waveform(playing: np.isPlaying, color: np.accent, glow: settings.style == .elevated)
         }
     }
 
@@ -2005,12 +2466,14 @@ struct NotchView: View {
                     .shadow(color: np.accent.opacity(settings.style != .basic && np.isPlaying ? 0.5 : 0.35),
                             radius: settings.style != .basic && np.isPlaying ? 14 : 10, y: 3)
                     .animation(.spring(response: 0.4, dampingFraction: 0.65), value: np.isPlaying)
+                    .modifier(Tilt(enabled: settings.style != .basic, size: 56))
                     .onTapGesture { np.openPlayer() }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(np.title).font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
-                    Text(np.artist).font(.system(size: 13, weight: .medium)).foregroundColor(.white.opacity(0.6))
+                    Marquee(text: np.title, font: .system(size: 15, weight: .semibold), color: .white, height: 19)
+                    Marquee(text: np.artist, font: .system(size: 13, weight: .medium), color: .white.opacity(0.65), height: 17)
                 }
-                .lineLimit(1)
+                // Glass lets the background through, so the text gets a soft shadow to stay readable.
+                .shadow(color: .black.opacity(settings.style == .glass ? 0.45 : 0), radius: 2, y: 1)
                 .id(np.title + np.artist)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 Spacer(minLength: 8)
@@ -2047,6 +2510,8 @@ struct NotchView: View {
                         .padding(.horizontal, 10)
                     ControlButton(symbol: "forward.fill", size: 19) { np.next() }
                 }
+                .padding(.horizontal, settings.style == .basic ? 0 : 6)
+                .modifier(Surface(style: settings.style, shape: Capsule(), fallback: 0, elevated: 0.05))
                 // The system only lets us control the app it is currently reporting.
                 .disabled(!np.canControl)
                 .opacity(np.canControl ? 1 : 0.35)
@@ -2103,7 +2568,8 @@ struct NotchView: View {
                     .help(shelf.selection.isEmpty ? L("clearShelf") : L("removeSelected", shelf.selection.count))
                 }
                 .padding(6)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
+                .modifier(Surface(style: settings.style, shape: RoundedRectangle(cornerRadius: 16, style: .continuous),
+                                  fallback: 0.05, elevated: 0.05))
             }
         }
         .frame(height: NotchState.shelfHeight)
@@ -2430,95 +2896,170 @@ struct PermissionsList: View {
     }
 }
 
+final class SettingsModel: ObservableObject {
+    enum Pane: String, CaseIterable, Identifiable {
+        case general, appearance, addons, permissions
+        var id: String { rawValue }
+        var title: String { L(rawValue == "general" ? "general" : rawValue) }
+        var icon: String {
+            switch self {
+            case .general: return "gearshape.fill"
+            case .appearance: return "paintbrush.fill"
+            case .addons: return "puzzlepiece.extension.fill"
+            case .permissions: return "hand.raised.fill"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .general: return .gray
+            case .appearance: return .purple
+            case .addons: return .orange
+            case .permissions: return .blue
+            }
+        }
+    }
+    @Published var pane: Pane = .general
+}
+
+/// Settings in landscape, like System Settings: sections on the left, their options on the right.
 struct SettingsView: View {
-    var onDone: () -> Void
     @ObservedObject var settings = Settings.shared
     @ObservedObject var perms: Permissions
+    @StateObject private var model = SettingsModel()
+    @Namespace private var highlight
 
     var body: some View {
-        VStack(spacing: 14) {
-            VStack(spacing: 6) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: 64, height: 64)
-                    .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
-                Text(L("settingsTitle"))
-                    .font(.system(size: 21, weight: .bold))
-            }
-            .padding(.top, 24)
-
-            glassSection(L("language")) {
-                Picker("", selection: $settings.language) {
-                    ForEach(Settings.Language.allCases) { Text($0.title).tag($0) }
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 214)
+                .background(Color.black.opacity(0.18))
+            Rectangle().fill(Color.white.opacity(0.08)).frame(width: 1)
+            ZStack(alignment: .topLeading) {
+                ScrollView {
+                    content(model.pane)
+                        .padding(.horizontal, 28)
+                        .padding(.top, 30)
+                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                .id(model.pane)
+                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 10)), removal: .opacity))
             }
-
-            glassSection(L("appearance")) {
-                StylePicker()
-            }
-
-            glassSection(L("permissions")) {
-                VStack(spacing: 10) {
-                    PermissionsList(perms: perms)
-                    Text(L("permHint"))
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            glassSection(L("addons")) {
-                AddOnsList()
-            }
-
-            glassSection(L("behavior")) {
-                VStack(alignment: .leading, spacing: 9) {
-                    Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
-                    Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
-                    LaunchAtLoginToggle(settings: settings)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .font(.system(size: 13))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            Text(L("tip"))
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Button(action: onDone) {
-                Text(L("done"))
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 26)
-        .padding(.bottom, 20)
-        .frame(width: 440)
+        .frame(width: 780, height: 500)
         .background(VisualEffect(material: .hudWindow).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: model.pane)
         .animation(.easeInOut(duration: 0.2), value: settings.language)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 10) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 38, height: 38)
+                    .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("NotchUser").font(.system(size: 15, weight: .bold))
+                    Text("v" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""))
+                        .font(.system(size: 11)).foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 44)
+            .padding(.bottom, 16)
+            ForEach(SettingsModel.Pane.allCases) { pane in sidebarRow(pane) }
+            Spacer()
+            Text(L("tip"))
+                .font(.system(size: 10.5))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 16)
+    }
+
+    private func sidebarRow(_ pane: SettingsModel.Pane) -> some View {
+        let on = model.pane == pane
+        return Button { model.pane = pane } label: {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(pane.color.gradient)
+                    .frame(width: 24, height: 24)
+                    .overlay(Image(systemName: pane.icon).font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white))
+                    .scaleEffect(on ? 1.06 : 1)
+                Text(pane.title).font(.system(size: 13, weight: on ? .semibold : .regular))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background {
+                if on {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                        .matchedGeometryEffect(id: "highlight", in: highlight)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder private func content(_ pane: SettingsModel.Pane) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(pane.title).font(.system(size: 22, weight: .bold))
+            switch pane {
+            case .general:
+                glassSection(L("language")) {
+                    Picker("", selection: $settings.language) {
+                        ForEach(Settings.Language.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                glassSection(L("behavior")) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle(L("peekOnTrack"), isOn: $settings.peekOnTrackChange)
+                        Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
+                        LaunchAtLoginToggle(settings: settings)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .font(.system(size: 13))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            case .appearance:
+                glassSection("") { StylePicker() }
+            case .addons:
+                glassSection("") { AddOnsList() }
+                Text(L("addonsSub"))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            case .permissions:
+                glassSection("") {
+                    VStack(spacing: 10) {
+                        PermissionsList(perms: perms)
+                        Text(L("permHint"))
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
     }
 }
 
 struct LaunchAtLoginToggle: View {
     @ObservedObject var settings: Settings
     var body: some View {
-        Toggle(L("launchAtLogin"), isOn: Binding(
-            get: { SMAppService.mainApp.status == .enabled },
-            set: { on in
-                try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-                settings.objectWillChange.send()
-            }))
+        Toggle(L("launchAtLogin"), isOn: $settings.launchAtLogin)
     }
 }
 
@@ -2741,11 +3282,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
             w.contentViewController = NSHostingController(rootView: view)
             w.setContentSize(NSSize(width: 500, height: 610))
         } else {
-            let controller = NSHostingController(rootView: SettingsView(onDone: { [weak self] in self?.window?.close() }, perms: perms))
-            // Fixed width, height measured from the content.
-            let fit = controller.sizeThatFits(in: CGSize(width: 440, height: 2000))
+            let controller = NSHostingController(rootView: SettingsView(perms: perms))
             w.contentViewController = controller
-            w.setContentSize(NSSize(width: 440, height: fit.height))
+            w.setContentSize(NSSize(width: 780, height: 500))
         }
         w.center()
         perms.start()
@@ -2786,6 +3325,9 @@ final class NotchPanel: NSPanel {
 
 final class HostingView<V: View>: NSHostingView<V> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    /// The right-click menu, built fresh each time it opens.
+    var menuProvider: (() -> NSMenu?)?
+    override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() ?? super.menu(for: event) }
 }
 
 extension NSScreen {
@@ -2808,6 +3350,8 @@ final class NotchController {
     var toastUntil = Date.distantPast
     private var hoverSince: Date?
     private var leftSince: Date?
+    /// Restarts the short grace period before the notch closes (e.g. once its menu is dismissed).
+    func leaveDelayFromNow() { leftSince = Date() }
 
     init(screen: NSScreen, np: NowPlaying, shelf: Shelf, foco: FocoTimer, camera: CameraMirror) {
         displayID = screen.displayID
@@ -2820,6 +3364,7 @@ final class NotchController {
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         let host = HostingView(rootView: NotchView(np: np, ui: ui, shelf: shelf, foco: foco, camera: camera))
+        host.menuProvider = { [weak self] in self.map { NotchMenu.build(for: $0, shelf: shelf) } }
         // The panel has a fixed frame; without this every redraw also recomputes window constraints.
         host.sizingOptions = []
         panel.contentView = host
@@ -2863,8 +3408,13 @@ final class NotchController {
         return ui.expanded || Date() < peekUntil || zone.contains(mouse)
     }
 
+    /// While the right-click menu is open the notch holds still: the mouse is over the menu, not
+    /// the notch, and closing it would also close the menu.
+    var menuOpen = false
+    let menuWatcher = MenuWatcher()
+
     func tick(fileDrag: Bool, np: NowPlaying, shelf: Shelf, foco: FocoTimer) {
-        guard let s = screen else { return }
+        guard let s = screen, !menuOpen else { return }
 
         if fileDrag != ui.dragging { ui.dragging = fileDrag }
         // While something is carried in, the notch shows only the big drop zone.
@@ -2939,7 +3489,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.rebuild() }
         }
         np.onTrackChange = { [weak self] in
-            guard Settings.shared.peekOnTrackChange else { return }
+            guard Settings.shared.peekOnTrackChange else {
+                self?.controllers.forEach { $0.bump() }
+                return
+            }
             self?.peek(3)
         }
         // Study <-> break switches peek open like a notification.
