@@ -28,9 +28,10 @@
 - **Complemento: fone Bluetooth em alta qualidade.** Opção que mantém o microfone do MacBook como entrada, para o fone não cair para a qualidade de ligação.
 > Os complementos vêm desligados: ligue os que quiser na apresentação, nos **Ajustes** ou no botão direito do notch → **Complementos**.
 
-- **Três estilos.** **Básico** (preto, como parte do hardware), **Elevado** (sombra em camadas, o notch levanta sob o mouse e o painel surge de um desfoque) e **Vidro** (translúcido, com brilho e ondas na cor do álbum que seguem a música). Escolha na apresentação, nos Ajustes ou no botão direito → **Aparência**.
+- **Três estilos.** **Básico** (preto, como parte do hardware), **Elevado** (sombra em camadas, controles em relevo, uma luz na cor do álbum sob o notch e a capa que inclina na direção do mouse) e **Vidro** (o Liquid Glass da Apple, com a prateleira e os controles em vidro e ondas na cor do álbum). Escolha na apresentação, nos Ajustes ou no botão direito → **Aparência**.
 - **Telas externas.** Em monitores sem notch aparece uma pílula no topo com tudo isso.
-- **Avisos discretos.** Quando a música troca, o notch abre por alguns segundos e dá um "pulinho".
+- **Avisos discretos.** Quando a música troca, o notch dá só um "pulinho", sem abrir (dá pra fazer ele abrir nos Ajustes).
+- **Leve de verdade.** As barrinhas e ondas rodam no Core Animation do próprio macOS: com música tocando e o notch fechado, o app fica perto de 0% de CPU.
 - **Português, English e Español.** Escolha o idioma na apresentação ou deixe seguir o idioma do Mac.
 
 ## Instalar
