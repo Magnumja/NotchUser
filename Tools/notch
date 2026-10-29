@@ -1,0 +1,61 @@
+#!/bin/zsh
+# Talks to NotchUser from the Terminal (through notchuser:// addresses).
+#   notch run <command...>                follow a command in the notch until it ends (keeps its exit code)
+#   notch notify <title> [detail]         a short message in the notch
+#   notch start <id> <title> [detail]     an activity you end later with notch done
+#   notch progress <id> <0-100> [title]   how far along it is
+#   notch done <id> [ok|fail] [detail]
+#   notch clear [id]
+#   notch glow [green|red|orange|blue|purple|#RRGGBB]
+set -u
+self=$0  # inside a function $0 is the function's name
+
+enc() { print -rn -- "$1" | perl -pe 's/([^A-Za-z0-9_.~-])/sprintf("%%%02X", ord($1))/seg' }
+
+# send <action> [name value]...
+send() {
+  local action=$1 q=""
+  shift
+  while (( $# >= 2 )); do
+    [[ -n "$2" ]] && q+="&$1=$(enc "$2")"
+    shift 2
+  done
+  open -g "notchuser://$action?${q#&}"
+}
+
+usage() { sed -n '2,9p' "$self" | sed 's/^# \{0,1\}//' >&2; exit 2 }
+
+cmd=${1:-}
+(( $# )) && shift
+case $cmd in
+  run)
+    (( $# )) || usage
+    id="run-$$-$RANDOM"
+    send start id "$id" title "${NOTCH_TITLE:-${1:t}}" detail "$*" icon terminal.fill
+    # Ctrl-C ends the command; tell the notch it didn't finish.
+    trap 'send done id "$id" ok 0; exit 130' INT TERM
+    "$@"
+    code=$?
+    if (( code == 0 )); then send done id "$id" ok 1
+    else send done id "$id" ok 0 detail "exit $code"; fi
+    exit $code ;;
+  notify)
+    (( $# )) || usage
+    send notify title "$1" detail "${2:-}" ;;
+  start)
+    (( $# >= 2 )) || usage
+    send start id "$1" title "$2" detail "${3:-}" ;;
+  progress)
+    (( $# >= 2 )) || usage
+    send progress id "$1" value "$(( $2 / 100.0 ))" title "${3:-}" ;;
+  done)
+    (( $# )) || usage
+    ok=1; [[ "${2:-ok}" == (fail|0|false) ]] && ok=0
+    send done id "$1" ok $ok detail "${3:-}" ;;
+  clear)
+    send clear id "${1:-}" ;;
+  glow)
+    send glow color "${1:-green}" ;;
+  *)
+    usage ;;
+esac

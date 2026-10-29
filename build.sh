@@ -4,7 +4,7 @@
 #   ./build.sh release   build dist/NotchUser.zip to share (does not install)
 set -e
 cd "$(dirname "$0")"
-VERSION=1.5.0
+VERSION=1.6.0
 BUNDLE_ID=io.github.notchuser
 MIN_MACOS=14.0
 
@@ -25,6 +25,10 @@ lipo -create $TMP/NotchUser-arm64 $TMP/NotchUser-x86_64 -output $APP/Contents/Ma
 clang -O2 -dynamiclib -fobjc-arc -framework Foundation -arch arm64 -arch x86_64 -mmacosx-version-min=$MIN_MACOS \
   -o $APP/Contents/Resources/helper.dylib helper.m
 codesign --force --sign - $APP/Contents/Resources/helper.dylib
+
+# The notch command (notch run, notch notify...), linked into the PATH from Settings → Add-ons.
+cp Tools/notch $APP/Contents/Resources/notch
+chmod +x $APP/Contents/Resources/notch
 
 # Icon: Assets/AppIcon.png (made from Assets/logo.png by Tools/make_icon.swift) -> AppIcon.icns.
 [ -f Assets/AppIcon.png ] || swift Tools/make_icon.swift Assets/logo.png Assets/AppIcon.png
@@ -55,6 +59,10 @@ cat > $APP/Contents/Info.plist <<EOF
   <key>CFBundleLocalizations</key><array><string>en</string><string>pt</string><string>es</string></array>
   <key>NSAppleEventsUsageDescription</key><string>To show and control the music playing in Spotify and Apple Music.</string>
   <key>NSCameraUsageDescription</key><string>The notch mirror shows your camera so you can check yourself before a call. Nothing is recorded.</string>
+  <key>CFBundleURLTypes</key><array><dict>
+    <key>CFBundleURLName</key><string>$BUNDLE_ID</string>
+    <key>CFBundleURLSchemes</key><array><string>notchuser</string></array>
+  </dict></array>
 </dict></plist>
 EOF
 # The macOS permission prompt in each language.
