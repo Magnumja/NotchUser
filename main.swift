@@ -3009,11 +3009,16 @@ final class Lyrics: ObservableObject {
         }
     }
 
-    /// The server was busy or the Mac offline: try again in a while, for the same song only.
+    private var retries: [String: Int] = [:]
+
+    /// The server was busy or the Mac offline: try again in a while (a few times), for the same song only.
     private func retry(_ k: String) {
         guard key == k else { return }
-        status = .missing
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+        let n = retries[k, default: 0] + 1
+        retries[k] = n
+        guard n <= 3 else { status = .missing; return }
+        status = .loading
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20 * Double(n)) { [weak self] in
             guard let self, self.key == k, self.lines.isEmpty, let np = self.np else { return }
             self.load(title: np.title, artist: np.artist, duration: np.duration, key: k)
         }
@@ -3276,6 +3281,9 @@ final class NotchState: ObservableObject {
         }
     }
 
+    /// Pages share the tallest one's height: switching never moves the dots out from under the mouse.
+    var pagedHeight: CGFloat { pages.map(pageHeight).max() ?? 0 }
+
     func go(to p: Page) {
         guard p != currentPage, let from = pages.firstIndex(of: currentPage), let to = pages.firstIndex(of: p) else { return }
         pageForward = to > from
@@ -3299,7 +3307,7 @@ final class NotchState: ObservableObject {
         if mirrorOn { return CGSize(width: Self.width, height: notchH + chrome + Self.mirrorHeight) }
         if toast != nil { return CGSize(width: Self.width, height: notchH + chrome + Self.toastHeight) }
         if let q = question { return CGSize(width: Self.width, height: notchH + chrome + Self.questionHeight(q, media: showMedia)) }
-        if paged { return CGSize(width: Self.width, height: notchH + chrome + pageHeight(currentPage) + Self.dotsHeight) }
+        if paged { return CGSize(width: Self.width, height: notchH + chrome + pagedHeight + Self.dotsHeight) }
         var sections: [CGFloat] = []
         if activityRows > 0 { sections.append(Self.activityHeight * CGFloat(activityRows)) }
         if showFocus { sections.append(Self.focusHeight) }
@@ -4162,6 +4170,7 @@ struct VolumeControl: View {
         .allowsHitTesting(available.value)
         .help(L("volume"))
         .onAppear { refresh() }
+        .onDisappear { open.value = false }
         .onHover { h in
             if h { refresh() }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { open.value = h && level.value != nil }
@@ -4177,6 +4186,7 @@ struct VolumeControl: View {
 
 /// Dots under the open notch, one per page; pointing at one is enough to switch.
 struct PageDots: View {
+    @StateObject private var rest = Box<DispatchWorkItem?>(nil)
     var pages: [NotchState.Page]
     var current: NotchState.Page
     var accent: Color
@@ -4192,8 +4202,15 @@ struct PageDots: View {
                     .shadow(color: on ? accent.opacity(0.6) : .clear, radius: 4)
                     .frame(width: 24, height: NotchState.dotsHeight)
                     .contentShape(Rectangle())
-                    .onHover { if $0 { select(p) } }
-                    .onTapGesture { select(p) }
+                    // A click switches at once; resting on a dot for a moment does too, passing over it doesn't.
+                    .onHover { inside in
+                        rest.value?.cancel()
+                        guard inside else { return }
+                        let w = DispatchWorkItem { select(p) }
+                        rest.value = w
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
+                    }
+                    .onTapGesture { rest.value?.cancel(); select(p) }
                     .help(L("page." + p.rawValue))
             }
         }
@@ -5547,7 +5564,8 @@ struct NotchView: View {
                             .combined(with: .offset(x: forward ? 46 : -46)),
                         removal: .opacity.combined(with: .offset(x: forward ? -46 : 46))))
             }
-            .frame(height: ui.pageHeight(current), alignment: .top)
+            // Shorter pages sit in the middle of the shared height.
+            .frame(height: ui.pagedHeight, alignment: .center)
             PageDots(pages: ui.pages, current: current, accent: np.accent) { ui.go(to: $0) }
                 .frame(height: NotchState.dotsHeight)
         }
@@ -6754,7 +6772,11 @@ final class NotchController {
         let rect = NSRect(x: s.frame.midX - sz.width / 2, y: s.frame.maxY - sz.height, width: sz.width, height: sz.height)
             .insetBy(dx: -2, dy: -2)
         let mouse = NSEvent.mouseLocation
-        let inside = rect.contains(mouse)
+        // Open, it keeps a little slack below and beside it: reaching for the dots on its bottom edge
+        // (or overshooting a button) isn't leaving.
+        let inside = ui.expanded
+            ? NSRect(x: rect.minX - 8, y: rect.minY - 16, width: rect.width + 16, height: rect.height + 16).contains(mouse)
+            : rect.contains(mouse)
         // Magnetism: how close the cursor is to the closed notch, in steps so it redraws rarely.
         var near: CGFloat = 0
         if !ui.expanded && Settings.shared.magnetism {
