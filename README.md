@@ -41,10 +41,14 @@
 The notch is dead space in the middle of your menu bar. NotchUser turns it into the most useful spot on your screen, and it looks like Apple put it there.
 
 - **Hover, and it opens.** Cover, progress and controls grow out of the notch and slip back in when you leave.
-- **Your AI agents report to it.** Claude Code, Codex and Copilot show what they're doing, and you **approve their commands or answer their questions right in the notch**, without leaving what you're doing.
+- **Your AI agents report to it.** Claude Code, Codex and Copilot show what they're doing, you **approve their commands or answer their questions right in the notch**, and when they finish it opens with **what they did**.
 - **Your builds too.** `npm`, Xcode, `cargo`, `docker`, `git push`… show up on their own, with a check or a cross when they end.
 - **A shelf for everything in transit.** Drop files, links or text on it, drag them out wherever they go.
 - **Light enough to forget.** About **0.1% CPU and 30–50 MB** with music playing. The animations run in Core Animation, inside macOS.
+
+## New in 1.7
+
+When Claude Code or Codex finishes, the notch opens with its logo, what you asked and a short summary of what it did. One click takes you back to the app.
 
 ## New in 1.6
 

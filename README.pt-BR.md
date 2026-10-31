@@ -40,10 +40,14 @@
 O notch é um espaço morto no meio da barra de menus. O NotchUser transforma ele no lugar mais útil da tela, e parece que foi a Apple que colocou ali.
 
 - **Passou o mouse, abriu.** Capa, progresso e controles saem do notch e voltam pra dentro quando você sai.
-- **Seus agentes de IA falam com ele.** Claude Code, Codex e Copilot mostram o que estão fazendo, e você **aprova comandos ou responde perguntas direto no notch**, sem largar o que está fazendo.
+- **Seus agentes de IA falam com ele.** Claude Code, Codex e Copilot mostram o que estão fazendo, você **aprova comandos ou responde perguntas direto no notch**, e quando terminam ele abre com **o que eles fizeram**.
 - **Seus builds também.** `npm`, Xcode, `cargo`, `docker`, `git push`… aparecem sozinhos, com um ✓ ou um ✕ quando terminam.
 - **Uma prateleira pra tudo que está de passagem.** Solte arquivos, links ou texto nela e arraste pra onde precisar.
 - **Tão leve que dá pra esquecer.** Cerca de **0,1% de CPU e 30–50 MB** com música tocando. As animações rodam no Core Animation, dentro do macOS.
+
+## Novidades da 1.7
+
+Quando o Claude Code ou o Codex termina, o notch abre com o logo dele, o que você pediu e um resumo curto do que ele fez. Um clique leva de volta ao app.
 
 ## Novidades da 1.6
 

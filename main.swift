@@ -326,6 +326,7 @@ enum Strings {
         "deny": ["en": "Deny", "pt": "Negar", "es": "Denegar"],
         "inTerminal": ["en": "Answer in the terminal", "pt": "Responder no terminal", "es": "Responder en la terminal"],
         "send": ["en": "Send", "pt": "Enviar", "es": "Enviar"],
+        "ok": ["en": "OK", "pt": "OK", "es": "OK"],
         "activityDone": ["en": "Done", "pt": "Terminou", "es": "Terminado"],
         "activityFailed": ["en": "Failed", "pt": "Falhou", "es": "Falló"],
         "activityWaiting": ["en": "Waiting for you", "pt": "Esperando você", "es": "Esperándote"],
@@ -1002,6 +1003,7 @@ struct Activity: Codable, Equatable, Identifiable {
     var multi: Bool?         // several options can be picked
     var header: String?      // a short tag for the question
     var step: String?        // "1/2" when the agent asks several questions in a row
+    var summary: String?     // an agent's closing words: what it did
     var icon: String?        // SF Symbol
     var app: String?         // bundle ID brought forward on click
     var open: String?        // URL or path opened on click (wins over app)
@@ -1010,8 +1012,11 @@ struct Activity: Codable, Equatable, Identifiable {
     var updated: Date?
 
     private enum CodingKeys: String, CodingKey {
-        case title, detail, state, progress, question, options, multi, header, step, icon, app, open, pid, started, updated
+        case title, detail, state, progress, question, options, multi, header, step, summary, icon, app, open, pid, started, updated
     }
+
+    /// The coding agent this activity belongs to, if any.
+    var agent: Agent? { Agent.allCases.first { id.hasPrefix($0.rawValue + "-") } }
 
     /// A question to answer by picking one of its options.
     var isChoice: Bool { state == .waiting && !(options ?? []).isEmpty }
@@ -1073,7 +1078,7 @@ final class Activities: ObservableObject {
     private var expiry: [String: DispatchWorkItem] = [:]
     private var seen: Set<String> = []
     /// Finished activities stay until the notch has shown them, then leave shortly after.
-    private let keepUnseen: TimeInterval = 600, keepSeen: TimeInterval = 6
+    private let keepUnseen: TimeInterval = 600, keepSeen: TimeInterval = 9
 
     private let devTasks = DevTasks()
 
@@ -1185,6 +1190,11 @@ final class Activities: ObservableObject {
     }
 
     var question: Activity? { items.first { $0.isChoice } }
+
+    /// An agent just finished and said what it did: the newest one, shown as a card.
+    var result: Activity? {
+        items.filter { $0.finished && $0.agent != nil && $0.summary != nil }.max { ($0.updated ?? .distantPast) < ($1.updated ?? .distantPast) }
+    }
 
     func dismiss(_ a: Activity) {
         ActivityFiles.remove(a.id)
@@ -1442,6 +1452,7 @@ enum CLI {
         case "UserPromptSubmit", "userPromptSubmitted":
             a.state = .running
             a.question = nil
+            a.summary = nil
             a.started = Date()
             let prompt = (j["prompt"] as? String ?? "").split(separator: "\n").first.map(String.init) ?? ""
             a.detail = String(prompt.prefix(90))
@@ -1469,6 +1480,8 @@ enum CLI {
             guard existing != nil else { return 0 }
             a.state = .done
             a.question = nil
+            // Claude Code and Codex pass what they just said: the notch shows it as the result.
+            a.summary = (j["last_assistant_message"] as? String).flatMap(summarize)
             ActivityFiles.write(a)
         case "SessionEnd", "sessionEnd":
             ActivityFiles.remove(id)
@@ -1507,6 +1520,26 @@ enum CLI {
         ]]
         if let data = try? JSONSerialization.data(withJSONObject: out) { FileHandle.standardOutput.write(data) }
         return 0
+    }
+
+    /// The start of a reply, as plain text: no Markdown marks, no code blocks, about three lines.
+    private static func summarize(_ text: String) -> String? {
+        var out: [String] = []
+        var inCode = false
+        for raw in text.split(separator: "\n") {
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") { inCode.toggle(); continue }
+            if inCode || line.isEmpty || line.hasPrefix("|") || line.allSatisfy({ "-=*_".contains($0) }) { continue }
+            while let f = line.first, "#>-*+".contains(f) { line = String(line.dropFirst()).trimmingCharacters(in: .whitespaces) }
+            for mark in ["**", "__", "`"] { line = line.replacingOccurrences(of: mark, with: "") }
+            // [text](link) -> text
+            line = line.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+            if !line.isEmpty { out.append(line) }
+            if out.joined(separator: " ").count > 240 { break }
+        }
+        let joined = out.joined(separator: " ")
+        guard !joined.isEmpty else { return nil }
+        return joined.count > 240 ? String(joined.prefix(237)).trimmingCharacters(in: .whitespaces) + "…" : joined
     }
 
     /// "Bash: npm test", "Edit: main.swift"…
@@ -1724,7 +1757,17 @@ enum Agent: String, CaseIterable, Identifiable {
     var icon: String { [.claude: "sparkle", .codex: "chevron.left.forwardslash.chevron.right", .copilot: "curlybraces"][self]! }
     var color: Color { [.claude: Color.orange, .codex: Color(white: 0.85), .copilot: Color(red: 0.25, green: 0.6, blue: 1)][self]! }
     /// Brought forward on click when the hook can't tell which app ran it.
-    var app: String? { [.codex: "com.openai.chat", .copilot: "com.microsoft.VSCode"][self] }
+    var app: String? {
+        let candidates: [String]
+        switch self {
+        case .claude: candidates = ["com.anthropic.claudefordesktop"]
+        case .codex: candidates = ["com.openai.codex", "com.openai.chat"]  // the Codex app, or ChatGPT
+        case .copilot: candidates = ["com.microsoft.VSCode"]
+        }
+        return candidates.first { appURL($0) != nil } ?? candidates.first
+    }
+    /// The installed app's icon (Claude, ChatGPT, VS Code), when there is one.
+    var iconImage: NSImage? { app.flatMap { appIcon($0) } }
 }
 
 /// Adds (or removes) NotchUser's hooks in each agent's settings, leaving everything else alone.
@@ -3173,6 +3216,7 @@ final class NotchState: ObservableObject {
     @Published var showFocus = false
     @Published var activityRows = 0      // live activities listed at the top
     @Published var question: Activity?   // an agent's multiple-choice question takes over the notch
+    @Published var result: Activity?     // an agent finished: what it did, shown on its own
     /// The player shows the lyrics beside a smaller player (stays chosen until turned off).
     @Published var lyricsMode = false
     /// The lyric line under the closed notch, and the width it needs.
@@ -3217,6 +3261,13 @@ final class NotchState: ObservableObject {
     static let activityHeight: CGFloat = 46
     static let optionHeight: CGFloat = 42
     static let miniPlayerHeight: CGFloat = 44
+    /// Header, what was asked, up to four lines of what was done, and the buttons.
+    static func resultHeight(_ r: Activity) -> CGFloat {
+        let lines = min(4, max(1, ceil(CGFloat((r.summary ?? "").count) / 62)))
+        let asked: CGFloat = (r.detail ?? "").isEmpty ? 0 : 22
+        return 30 + asked + 8 + lines * 18 + 14 + 26
+    }
+
     /// Laid out to fit the question: its text, one card per option, and the music still playing.
     static func questionHeight(_ q: Activity, media: Bool) -> CGFloat {
         let lines: CGFloat = (q.question ?? "").count > 52 ? 2 : 1
@@ -3307,6 +3358,7 @@ final class NotchState: ObservableObject {
         if mirrorOn { return CGSize(width: Self.width, height: notchH + chrome + Self.mirrorHeight) }
         if toast != nil { return CGSize(width: Self.width, height: notchH + chrome + Self.toastHeight) }
         if let q = question { return CGSize(width: Self.width, height: notchH + chrome + Self.questionHeight(q, media: showMedia)) }
+        if let r = result { return CGSize(width: Self.width, height: notchH + chrome + Self.resultHeight(r)) }
         if paged { return CGSize(width: Self.width, height: notchH + chrome + pagedHeight + Self.dotsHeight) }
         var sections: [CGFloat] = []
         if activityRows > 0 { sections.append(Self.activityHeight * CGFloat(activityRows)) }
@@ -3885,8 +3937,12 @@ struct ActivityBadge: View {
                 } else {
                     Spinner(color: c)
                 }
-                Image(systemName: item.icon ?? "terminal.fill")
-                    .font(.system(size: size * 0.36, weight: .bold)).foregroundColor(c)
+                if let img = item.agent?.iconImage {
+                    Image(nsImage: img).resizable().frame(width: size * 0.56, height: size * 0.56)
+                } else {
+                    Image(systemName: item.icon ?? "terminal.fill")
+                        .font(.system(size: size * 0.36, weight: .bold)).foregroundColor(c)
+                }
             case .waiting:
                 Image(systemName: "hand.raised.fill").font(.system(size: size * 0.42, weight: .bold)).foregroundColor(c)
             case .done:
@@ -4215,6 +4271,57 @@ struct PageDots: View {
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: current)
+    }
+}
+
+/// An agent finished its turn: its app, the folder, what you asked and what it says it did.
+struct ResultView: View {
+    var item: Activity
+    var activities: Activities
+
+    var body: some View {
+        let ok = item.state == .done
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Group {
+                    if let img = item.agent?.iconImage {
+                        Image(nsImage: img).resizable()
+                    } else {
+                        Image(systemName: item.icon ?? "sparkle").font(.system(size: 13, weight: .bold)).foregroundColor(.orange)
+                    }
+                }
+                .frame(width: 22, height: 22)
+                Text(item.title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                Spacer(minLength: 8)
+                Label(L(ok ? "activityDone" : "activityFailed") + " · " + Activity.duration(item.elapsed(at: Date())),
+                      systemImage: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundColor(ok ? .green : .red)
+                    .fixedSize()
+            }
+            .frame(height: 30)
+            if let asked = item.detail, !asked.isEmpty {
+                Label(asked, systemImage: "text.bubble")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(.white.opacity(0.45))
+                    .lineLimit(1)
+                    .frame(height: 22, alignment: .leading)
+            }
+            Text(item.summary ?? "")
+                .font(.system(size: 13))
+                .foregroundColor(.white.opacity(0.9))
+                .lineLimit(4)
+                .lineSpacing(1.5)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+            Spacer(minLength: 10)
+            HStack(spacing: 8) {
+                Spacer()
+                Button(L("ok")) { activities.dismiss(item) }.buttonStyle(ActivityButtonStyle(primary: false))
+                Button(L("openApp", item.agent?.name ?? "")) { activities.activate(item) }.buttonStyle(ActivityButtonStyle(primary: true))
+            }
+            .frame(height: 26)
+        }
     }
 }
 
@@ -5454,6 +5561,10 @@ struct NotchView: View {
                 mirrorSection
             } else if let toast = ui.toast {
                 toastSection(toast)
+            } else if let r = ui.result, ui.question == nil {
+                ResultView(item: r, activities: activities)
+                    .id(r.id + (r.summary ?? ""))
+                    .transition(.modifier(active: SoftSwap(amount: 1), identity: SoftSwap(amount: 0)))
             } else if let q = ui.question {
                 // The agent takes over; the music keeps going in the strip at the bottom.
                 QuestionView(item: q, activities: activities, np: np, ui: ui)
@@ -6757,6 +6868,8 @@ final class NotchController {
         updateLyric(fileDrag: fileDrag)
         let question = fileDrag ? nil : activities.question
         if ui.question != question { ui.question = question }
+        let result = fileDrag || question != nil ? nil : activities.result
+        if ui.result != result { ui.result = result }
         let rows = fileDrag ? 0 : min(activities.items.count, NotchState.maxActivities)
         if ui.activityRows != rows { ui.activityRows = rows }
         // A clock on the right: Foco's countdown, or how long the activity has been going.
@@ -6884,7 +6997,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Haptics.play(.tap)
             }
             self.controllers.forEach { $0.bump(failed ? .red : .green) }
-            self.peek(3)
+            // An agent's result card stays long enough to read.
+            self.peek(done.contains { $0.agent != nil && $0.summary != nil } ? 8 : 3)
         }
         // Answered: show the player coming back, then let the notch close if the mouse is away.
         activities.onAnswered = { [weak self] in
