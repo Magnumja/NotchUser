@@ -97,6 +97,14 @@ notch progress build 40         # your own activity, with progress
 
 ## Install
 
+**With Homebrew** (recommended, updates with `brew upgrade`):
+
+```bash
+brew install --cask magnumja/tap/notchuser
+```
+
+**Or by hand:**
+
 1. Download **[NotchUser.zip](../../releases/latest/download/NotchUser.zip)**, unzip it, and drag **NotchUser.app** to **Applications**.
 2. It isn't signed with a paid Apple account, so the first time: **right-click the app → Open → Open** (or **System Settings → Privacy & Security → Open Anyway**). If macOS says it's "damaged":
    ```bash
