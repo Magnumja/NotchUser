@@ -50,6 +50,8 @@ The notch is dead space in the middle of your menu bar. NotchUser turns it into 
 
 When Claude Code or Codex finishes, the notch opens with its logo, what you asked and a short summary of what it did. One click takes you back to the app.
 
+**1.7.1:** the notch tells you when a new version is out, so you never miss an update. Also installable with Homebrew.
+
 ## New in 1.6
 
 | | |
@@ -117,7 +119,7 @@ Requires **macOS 14 Sonoma or later**, Apple Silicon or Intel.
 ## Privacy
 
 - **No account, no analytics, no tracking.**
-- Network requests: the Spotify cover art (from Spotify), and, only if you turn lyrics on and open them, the song's title, artist and length to [LRCLIB](https://lrclib.net), a free lyrics database.
+- Network requests: the Spotify cover art (from Spotify); once a day, the latest version number from GitHub, to tell you when an update is out (turn it off in **Settings → General**); and, only if you turn lyrics on and open them, the song's title, artist and length to [LRCLIB](https://lrclib.net), a free lyrics database.
 - Agents and activities stay on your Mac: they talk to the notch through local files. Connecting an agent only adds NotchUser's hooks to its settings, after a backup.
 - Text recognition runs on your Mac and the image is deleted right away. Every permission is asked only by the feature that needs it.
 

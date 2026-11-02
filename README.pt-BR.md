@@ -49,6 +49,8 @@ O notch é um espaço morto no meio da barra de menus. O NotchUser transforma el
 
 Quando o Claude Code ou o Codex termina, o notch abre com o logo dele, o que você pediu e um resumo curto do que ele fez. Um clique leva de volta ao app.
 
+**1.7.1:** o notch avisa quando sai versão nova, pra você nunca perder uma atualização. E agora dá pra instalar pelo Homebrew.
+
 ## Novidades da 1.6
 
 | | |
@@ -116,7 +118,7 @@ Requer **macOS 14 Sonoma ou mais novo**, Apple Silicon ou Intel.
 ## Privacidade
 
 - **Sem conta, sem estatísticas, sem rastreamento.**
-- Conexões de rede: a capa do Spotify (dos servidores do Spotify) e, só se você ligar as letras e abrir, o nome da música, o artista e a duração pro [LRCLIB](https://lrclib.net), um banco de letras gratuito.
+- Conexões de rede: a capa do Spotify (dos servidores do Spotify); uma vez por dia, o número da versão mais nova no GitHub, pra avisar quando sair atualização (dá pra desligar em **Ajustes → Geral**); e, só se você ligar as letras e abrir, o nome da música, o artista e a duração pro [LRCLIB](https://lrclib.net), um banco de letras gratuito.
 - Agentes e atividades ficam no seu Mac: conversam com o notch por arquivos locais. Conectar um agente só adiciona os hooks do NotchUser nos ajustes dele, depois de um backup.
 - O reconhecimento de texto roda no seu Mac e a imagem é apagada na hora. Cada permissão só é pedida pelo recurso que precisa dela.
 

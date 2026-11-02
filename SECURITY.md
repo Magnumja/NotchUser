@@ -41,7 +41,7 @@ Reports are especially welcome about:
 - **Local files:** the activities folder (`~/Library/Application Support/NotchUser/Activities`), the `notch` command and `notchuser://` links, and anything another app or web page could make the notch show or do.
 - **The Now Playing helper:** `helper.m`, loaded into `/usr/bin/perl`.
 - **The shelf:** files, links and text dropped on it, and its quick actions.
-- **Network requests:** Spotify cover art and synced lyrics from LRCLIB.
+- **Network requests:** Spotify cover art, synced lyrics from LRCLIB, and the daily update check against the GitHub API.
 
 Out of scope: problems that need someone to already control your Mac or your user account, and issues in macOS, Spotify, LRCLIB or the agents themselves (please report those to them).
 

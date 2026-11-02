@@ -140,6 +140,14 @@ final class Settings: ObservableObject {
     static let lyricsChanged = Notification.Name("NotchUser.lyricsSettingChanged")
     /// When the open notch would get too tall, its sections become pages with dots.
     @Published var pagesEnabled: Bool { didSet { d.set(pagesEnabled, forKey: "pagesEnabled") } }
+    /// Ask GitHub once a day whether a newer NotchUser is out.
+    @Published var checkUpdates: Bool {
+        didSet {
+            d.set(checkUpdates, forKey: "checkUpdates")
+            NotificationCenter.default.post(name: Self.updatesChanged, object: nil)
+        }
+    }
+    static let updatesChanged = Notification.Name("NotchUser.updatesSettingChanged")
 
     /// Asks the notch to open for a moment, to try the animation settings.
     static let previewRequested = Notification.Name("NotchUser.previewRequested")
@@ -182,6 +190,7 @@ final class Settings: ObservableObject {
         lyricsEnabled = d.bool(forKey: "lyricsEnabled")
         lyricsClosed = d.bool(forKey: "lyricsClosed")
         pagesEnabled = d.object(forKey: "pagesEnabled") as? Bool ?? true
+        checkUpdates = d.object(forKey: "checkUpdates") as? Bool ?? true
     }
 
     /// The motion actually used: Reduce Motion in Accessibility always wins.
@@ -246,6 +255,11 @@ enum Strings {
                              "es": "Usa el micrófono del MacBook para que los auriculares no bajen a calidad de llamada. Desactívalo para hablar por el micrófono de los auriculares."],
         "showFoco": ["en": "Show the Foco timer", "pt": "Mostrar o timer do Foco", "es": "Mostrar el temporizador de Foco"],
         "launchAtLogin": ["en": "Open at login", "pt": "Abrir ao iniciar sessão", "es": "Abrir al iniciar sesión"],
+        "checkUpdates": ["en": "Tell me when there's an update", "pt": "Avisar quando sair atualização", "es": "Avisarme cuando haya una actualización"],
+        "updateAvailable": ["en": "NotchUser %@ is out", "pt": "Saiu o NotchUser %@", "es": "Ya salió NotchUser %@"],
+        "updateHint": ["en": "Click to see what's new and download it", "pt": "Clique pra ver as novidades e baixar", "es": "Haz clic para ver las novedades y descargarla"],
+        "updateBrew": ["en": "Click to see what's new · brew upgrade notchuser", "pt": "Clique pra ver as novidades · brew upgrade notchuser", "es": "Haz clic para ver las novedades · brew upgrade notchuser"],
+        "updateTo": ["en": "Update to %@", "pt": "Atualizar para %@", "es": "Actualizar a %@"],
         // Camera mirror
         "copyTextFromScreen": ["en": "Copy text from screen", "pt": "Copiar texto da tela", "es": "Copiar texto de la pantalla"],
         "textCopied": ["en": "Text copied", "pt": "Texto copiado", "es": "Texto copiado"],
@@ -1211,6 +1225,65 @@ final class Activities: ObservableObject {
                 NSWorkspace.shared.openApplication(at: url, configuration: .init())
             }
         }
+    }
+}
+
+/// Once a day, asks GitHub for the latest release. A newer one shows up in the notch once,
+/// as an activity that opens its release page, and stays in the notch's menu until installed.
+final class Updates {
+    static let shared = Updates()
+    static let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+    private(set) var available: (version: String, page: URL)?
+    private var timer: Timer?
+
+    func start() {
+        timer?.invalidate()
+        timer = nil
+        guard Settings.shared.checkUpdates else { available = nil; return }
+        // Not right at login, when everything else is starting too.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.check() }
+        timer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in self?.check() }
+        timer?.tolerance = 3600
+    }
+
+    func check() {
+        guard Settings.shared.checkUpdates,
+              let url = URL(string: "https://api.github.com/repos/Magnumja/NotchUser/releases/latest") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tag = json["tag_name"] as? String,
+                  let page = (json["html_url"] as? String).flatMap(URL.init(string:)) else { return }
+            let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+            DispatchQueue.main.async { self.found(version, page) }
+        }.resume()
+    }
+
+    /// "1.10.0" is newer than "1.9.2".
+    static func newer(_ a: String, than b: String) -> Bool {
+        let x = a.split(separator: ".").map { Int($0) ?? 0 }, y = b.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(x.count, y.count) {
+            let p = i < x.count ? x[i] : 0, q = i < y.count ? y[i] : 0
+            if p != q { return p > q }
+        }
+        return false
+    }
+
+    /// Installed with Homebrew: the cask is the way to update.
+    private var viaHomebrew: Bool {
+        ["/opt/homebrew", "/usr/local"].contains { FileManager.default.fileExists(atPath: $0 + "/Caskroom/notchuser") }
+    }
+
+    private func found(_ version: String, _ page: URL) {
+        guard Self.newer(version, than: Self.current) else { available = nil; return }
+        available = (version, page)
+        let d = UserDefaults.standard
+        guard d.string(forKey: "updateAnnounced") != version else { return }
+        d.set(version, forKey: "updateAnnounced")
+        ActivityFiles.write(Activity(id: "update-" + version, title: L("updateAvailable", version),
+                                     detail: L(viaHomebrew ? "updateBrew" : "updateHint"), state: .done,
+                                     icon: "arrow.down.circle.fill", open: page.absoluteString, started: Date()))
     }
 }
 
@@ -3897,7 +3970,11 @@ struct Spinner: NSViewRepresentable {
 }
 
 extension Activity {
+    /// The app's own "a new version is out" notice: its icon and text, not a finished task's.
+    var isUpdate: Bool { id.hasPrefix("update-") }
+
     var color: Color {
+        if isUpdate { return Color(red: 0.54, green: 0.36, blue: 0.96) }
         switch state {
         case .running: return Color(red: 0.38, green: 0.64, blue: 1)
         case .waiting: return .orange
@@ -3907,6 +3984,7 @@ extension Activity {
     }
 
     func subtitle(at now: Date) -> String {
+        if isUpdate, let detail { return detail }
         let time = Activity.duration(elapsed(at: now))
         switch state {
         case .waiting: return question ?? L("activityWaiting")
@@ -3945,6 +4023,8 @@ struct ActivityBadge: View {
                 }
             case .waiting:
                 Image(systemName: "hand.raised.fill").font(.system(size: size * 0.42, weight: .bold)).foregroundColor(c)
+            case .done where item.isUpdate:
+                Image(systemName: item.icon ?? "arrow.down").font(.system(size: size * 0.5, weight: .bold)).foregroundColor(c)
             case .done:
                 Image(systemName: "checkmark").font(.system(size: size * 0.42, weight: .heavy)).foregroundColor(c)
             case .failed:
@@ -4716,6 +4796,10 @@ enum NotchMenu {
         }
         m.delegate = c.menuWatcher
 
+        if let update = Updates.shared.available {
+            m.addItem(item(L("updateTo", update.version), "arrow.down.circle") { NSWorkspace.shared.open(update.page) })
+            m.addItem(.separator())
+        }
         if settings.ocrEnabled {
             m.addItem(item(L("copyTextFromScreen"), "text.viewfinder", key: "2", modifiers: [.command, .shift]) {
                 // Let the menu close before the selection crosshair appears.
@@ -6387,6 +6471,7 @@ struct SettingsView: View {
                         Toggle(L("pages"), isOn: $settings.pagesEnabled)
                         Toggle(L("otherScreens"), isOn: $settings.showOnAllScreens)
                         LaunchAtLoginToggle(settings: settings)
+                        Toggle(L("checkUpdates"), isOn: $settings.checkUpdates)
                     }
                     .toggleStyle(.switch)
                     .controlSize(.small)
@@ -7009,6 +7094,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: Settings.activitiesChanged, object: nil, queue: .main) { [weak self] _ in
             self?.activities.update()
         }
+        Updates.shared.start()
+        NotificationCenter.default.addObserver(forName: Settings.updatesChanged, object: nil, queue: .main) { _ in Updates.shared.start() }
         setUpAddOns()
         Lyrics.shared.attach(np)
         // Lines change on the song's beat, not the mouse loop's: tell the notches right away.
