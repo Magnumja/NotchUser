@@ -5,7 +5,7 @@
 <h3 align="center">O notch do seu MacBook, finalmente útil.</h3>
 
 <p align="center">
-  Música, letras sincronizadas, uma prateleira de arquivos e atividades ao vivo dos seus builds e agentes de IA, logo abaixo da câmera.<br>
+  Uma Dynamic Island pro seu Mac: música, letras sincronizadas, uma prateleira de arquivos e atividades ao vivo dos seus builds e agentes de IA, logo abaixo da câmera.<br>
   Nativo, levíssimo, gratuito e de código aberto. Sem conta, sem rastreamento, sem assinatura.
 </p>
 
@@ -139,9 +139,25 @@ zsh build.sh release    # gera dist/NotchUser.zip
 
 **Sobre a música do navegador:** desde o macOS 15.4 só os apps da Apple podem ler o "Tocando agora". Como outros apps de notch, o NotchUser faz isso por um pequeno helper carregado pelo `/usr/bin/perl` da Apple. Não mexe em nenhuma configuração do sistema, mas a Apple pode fechar esse caminho numa atualização; o Spotify e o Apple Music continuariam funcionando.
 
+## Perguntas frequentes
+
+**É seguro? Por que o macOS avisa na primeira vez?**
+O NotchUser é de código aberto e toda versão é compilada a partir deste repositório. O aviso aparece porque o app não é notarizado com uma conta paga de desenvolvedor da Apple, não por algo no app. Dá pra ler cada linha no `main.swift` ou compilar você mesmo.
+
+**Meu Mac não tem notch.**
+Funciona em qualquer Mac com macOS 14 ou mais novo: sem notch, o NotchUser aparece como uma pílula no topo da tela, e o mesmo vale pra telas externas.
+
+**Custa alguma coisa?**
+Não. Sem plano pago, sem conta, sem anúncios. Se ele te ajuda, dá pra [apoiar o projeto](https://github.com/sponsors/Magnumja) ou só deixar uma estrela.
+
+**Quais agentes de IA funcionam?**
+Claude Code (app e CLI), Codex (app e CLI) e GitHub Copilot (VS Code e CLI). Conecte em **Ajustes → Complementos**; nada é enviado pra lugar nenhum, eles falam com o notch por arquivos locais.
+
 ## Contribuir
 
-Issues e pull requests são bem-vindos: bugs, ideias, traduções. Se o NotchUser deixou seu notch útil, **uma ⭐ ajuda outras pessoas a encontrarem ele.**
+Issues e pull requests são bem-vindos: bugs, ideias, traduções. Comece pelo [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Se o NotchUser deixou seu notch útil, **uma ⭐ ajuda outras pessoas a encontrarem ele**, e contar pra um amigo ajuda ainda mais.
 
 ## Licença
 

@@ -1,0 +1,46 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: And what did you expect instead? A screenshot or a short screen recording helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Play a song in Spotify
+        2. Hover the notch
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: NotchUser version
+      description: Settings, under the app name.
+      placeholder: "1.7.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: "macOS 26.1, MacBook Air M3 15\""
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Music / lyrics
+        - Shelf
+        - AI agents (Claude Code, Codex, Copilot)
+        - Live activities / notch command
+        - Settings / welcome tour
+        - Install / opening the app
+        - Other

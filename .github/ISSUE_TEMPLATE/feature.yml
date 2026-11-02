@@ -1,0 +1,16 @@
+name: Feature idea
+description: Something the notch could do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What would you like the notch to do, and when would you use it?
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Mockups, apps that do something similar, links.

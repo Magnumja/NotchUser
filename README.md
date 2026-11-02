@@ -5,7 +5,7 @@
 <h3 align="center">Your MacBook's notch, finally useful.</h3>
 
 <p align="center">
-  Music, synced lyrics, a file shelf, and live activities for your builds and AI agents, right under the camera.<br>
+  A Dynamic Island for your Mac: music, synced lyrics, a file shelf, and live activities for your builds and AI agents, right under the camera.<br>
   Native, featherweight, free and open source. No account, no tracking, no subscription.
 </p>
 
@@ -140,9 +140,25 @@ zsh build.sh release    # build dist/NotchUser.zip
 
 **About browser music:** since macOS 15.4 only Apple's apps may read "Now Playing". Like other notch apps, NotchUser does it through a small helper loaded by Apple's `/usr/bin/perl`. It changes no system setting, but Apple could close the path in an update; Spotify and Apple Music would keep working.
 
+## FAQ
+
+**Is it safe? Why does macOS warn me the first time?**
+NotchUser is open source and every release is built from this repository. The warning appears because the app isn't notarized with a paid Apple developer account, not because of anything in the app. You can read every line in `main.swift`, or build it yourself.
+
+**My Mac doesn't have a notch.**
+It works on any Mac with macOS 14 or later: without a notch, NotchUser shows as a small pill at the top of the screen, and the same goes for external displays.
+
+**Does it cost anything?**
+No. No paid tier, no account, no ads. If it helps you, you can [sponsor the project](https://github.com/sponsors/Magnumja) or just leave a star.
+
+**Which AI agents work?**
+Claude Code (app and CLI), Codex (app and CLI) and GitHub Copilot (VS Code and CLI). Connect them in **Settings → Add-ons**; nothing is sent anywhere, they talk to the notch through local files.
+
 ## Contributing
 
-Issues and pull requests are welcome: bugs, ideas, translations. If NotchUser made your notch useful, **a ⭐ helps other people find it.**
+Issues and pull requests are welcome: bugs, ideas, translations. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
+
+If NotchUser made your notch useful, **a ⭐ helps other people find it**, and telling a friend helps even more.
 
 ## License
 

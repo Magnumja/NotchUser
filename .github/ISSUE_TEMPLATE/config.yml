@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Magnumja/NotchUser/security/advisories/new
+    about: Report security problems privately, never in a public issue.
+  - name: Windows version
+    url: https://github.com/Magnumja/NotchUser-Windows/issues
+    about: Issues with NotchUser for Windows go here.
+  - name: Linux version
+    url: https://github.com/Magnumja/NotchUser-Linux/issues
+    about: Issues with NotchUser for Linux (GNOME) go here.
