@@ -34,10 +34,17 @@ case $cmd in
     send start id "$id" title "${NOTCH_TITLE:-${1:t}}" detail "$*" icon terminal.fill
     # Ctrl-C ends the command; tell the notch it didn't finish.
     trap 'send done id "$id" ok 0; exit 130' INT TERM
-    "$@"
+    # stderr still reaches the terminal; its last line says why it failed.
+    err=$(mktemp -t notch)
+    "$@" 2> >(tee "$err" >&2)
     code=$?
     if (( code == 0 )); then send done id "$id" ok 1
-    else send done id "$id" ok 0 detail "exit $code"; fi
+    else
+      sleep 0.1  # let tee finish
+      why=$(sed $'s/\x1b\\[[0-9;]*[A-Za-z]//g' "$err" | grep -v '^[[:space:]]*$' | tail -n 1 | cut -c1-160)
+      send done id "$id" ok 0 detail "${why:-exit $code}"
+    fi
+    rm -f "$err"
     exit $code ;;
   notify)
     (( $# )) || usage

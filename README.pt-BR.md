@@ -45,6 +45,16 @@ O notch é um espaço morto no meio da barra de menus. O NotchUser transforma el
 - **Uma prateleira pra tudo que está de passagem.** Solte arquivos, links ou texto nela e arraste pra onde precisar.
 - **Tão leve que dá pra esquecer.** Cerca de **0,1% de CPU e 30–50 MB** com música tocando. As animações rodam no Core Animation, dentro do macOS.
 
+## Novidades da 1.8
+
+- **Do seu jeito.** Álbum, preto puro ou uma Aurora lenta atrás do notch. Uma cor de destaque que segue o álbum ou fica na que você escolher. Escolha o que o notch fechado mostra em cada lado (capa, ondas, relógio) e o arredondamento dos cantos.
+- **Luz que quer dizer algo.** Um brilho âmbar enquanto algo espera você e uma luz que percorre o notch quando termina.
+- **Aprovações mais seguras.** Cada pedido tem sua própria resposta, os botões só funcionam depois de um instante para um clique perdido não liberar nada, comandos arriscados ficam vermelhos e comandos longos passam rolando para você ler tudo.
+- **Aprovações mais rápidas.** ⌃⌥↩ permite e ⌃⌥⌫ nega. Sempre permita um comando exato numa pasta, e remova quando quiser.
+- **Atualização em um clique.** O notch baixa a versão nova, confere e reabre. Com o Homebrew, ele indica o `brew upgrade`.
+- **Agentes que continuam funcionando.** As conexões sobrevivem quando o app muda de lugar, **Verificar agentes** testa e repara, e o modo privado tira seus pedidos da tela.
+- **Mais builds encontrados.** Seu próprio `build.sh`, `swiftc`, `tsc`, `vite build`, `jest`, `dotnet`, `flutter` e outros. O `notch run` mostra por que um comando falhou.
+
 ## Novidades da 1.7
 
 Quando o Claude Code ou o Codex termina, o notch abre com o logo dele, o que você pediu e um resumo curto do que ele fez. Um clique leva de volta ao app.
@@ -118,8 +128,8 @@ Requer **macOS 14 Sonoma ou mais novo**, Apple Silicon ou Intel.
 ## Privacidade
 
 - **Sem conta, sem estatísticas, sem rastreamento.**
-- Conexões de rede: a capa do Spotify (dos servidores do Spotify); uma vez por dia, o número da versão mais nova no GitHub, pra avisar quando sair atualização (dá pra desligar em **Ajustes → Geral**); e, só se você ligar as letras e abrir, o nome da música, o artista e a duração pro [LRCLIB](https://lrclib.net), um banco de letras gratuito.
-- Agentes e atividades ficam no seu Mac: conversam com o notch por arquivos locais. Conectar um agente só adiciona os hooks do NotchUser nos ajustes dele, depois de um backup.
+- Conexões de rede: a capa do Spotify (dos servidores do Spotify); uma vez por dia, o número da versão mais nova no GitHub, pra avisar quando sair atualização (dá pra desligar em **Ajustes → Geral**), e a própria versão nova, do GitHub, se você clicar pra instalar; e, só se você ligar as letras e abrir, o nome da música, o artista e a duração pro [LRCLIB](https://lrclib.net), um banco de letras gratuito.
+- Agentes e atividades ficam no seu Mac: conversam com o notch por arquivos locais. Conectar um agente só adiciona os hooks do NotchUser nos ajustes dele, depois de um backup. O modo privado tira seus pedidos e as respostas dos agentes do notch.
 - O reconhecimento de texto roda no seu Mac e a imagem é apagada na hora. Cada permissão só é pedida pelo recurso que precisa dela.
 
 ## Desempenho

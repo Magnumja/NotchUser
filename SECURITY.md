@@ -37,11 +37,11 @@ Please give the fix time to ship before talking about the issue publicly.
 
 Reports are especially welcome about:
 
-- **The agent hooks:** what NotchUser writes into `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.copilot/hooks/`, and how it answers permission requests for an agent.
+- **The agent hooks:** what NotchUser writes into `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.copilot/hooks/`, the `hook` script in Application Support that they run, how it answers permission requests for an agent, and the always-allowed commands in `trusted.json`.
 - **Local files:** the activities folder (`~/Library/Application Support/NotchUser/Activities`), the `notch` command and `notchuser://` links, and anything another app or web page could make the notch show or do.
 - **The Now Playing helper:** `helper.m`, loaded into `/usr/bin/perl`.
 - **The shelf:** files, links and text dropped on it, and its quick actions.
-- **Network requests:** Spotify cover art, synced lyrics from LRCLIB, and the daily update check against the GitHub API.
+- **Network requests:** Spotify cover art, synced lyrics from LRCLIB, the daily update check against the GitHub API, and the in-app update (download, SHA-256 check, signature check and swap).
 
 Out of scope: problems that need someone to already control your Mac or your user account, and issues in macOS, Spotify, LRCLIB or the agents themselves (please report those to them).
 

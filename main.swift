@@ -14,6 +14,7 @@ import AudioToolbox
 import IOKit.hid
 import CoreImage
 import ImageIO
+import CryptoKit
 
 // MARK: - Settings & language
 
@@ -90,6 +91,31 @@ final class Settings: ObservableObject {
         var title: String { L("motion." + rawValue) }
     }
     @Published var motion: Motion { didSet { d.set(motion.rawValue, forKey: "motion") } }
+
+    /// What's behind the open notch.
+    enum Backdrop: String, CaseIterable, Identifiable {
+        case album, black, aurora
+        var id: String { rawValue }
+        var title: String { L("backdrop." + rawValue) }
+    }
+    @Published var backdrop: Backdrop { didSet { d.set(backdrop.rawValue, forKey: "backdrop") } }
+    /// The color of the waves, halo and highlights: nil follows the album.
+    @Published var accentHex: String? { didSet { d.set(accentHex, forKey: "accentHex") } }
+    var fixedAccent: Color? { accentHex.flatMap(Color.init(hex:)) }
+    /// What the closed notch shows on each side while music plays.
+    enum ClosedSlot: String, CaseIterable, Identifiable {
+        case cover, wave, clock, none
+        var id: String { rawValue }
+        var title: String { L("slot." + rawValue) }
+    }
+    @Published var closedLeft: ClosedSlot { didSet { d.set(closedLeft.rawValue, forKey: "closedLeft") } }
+    @Published var closedRight: ClosedSlot { didSet { d.set(closedRight.rawValue, forKey: "closedRight") } }
+    /// How round the open notch's bottom corners are, 0.4 ... 1.5.
+    @Published var roundness: Double { didSet { d.set(roundness, forKey: "roundness") } }
+    /// Light running around the notch when an agent or a command finishes, and a pulse while one waits.
+    @Published var eventEffects: Bool { didSet { d.set(eventEffects, forKey: "eventEffects") } }
+    /// Keep what's asked of the agents and their answers out of the notch (also read by the agents' hooks).
+    @Published var privateAgents: Bool { didSet { d.set(privateAgents, forKey: "privateAgents") } }
     /// 0.6 (slow) ... 1.6 (snappy).
     @Published var motionSpeed: Double { didSet { d.set(motionSpeed, forKey: "motionSpeed") } }
     /// The closed notch leans toward the cursor as it gets close.
@@ -191,6 +217,13 @@ final class Settings: ObservableObject {
         lyricsClosed = d.bool(forKey: "lyricsClosed")
         pagesEnabled = d.object(forKey: "pagesEnabled") as? Bool ?? true
         checkUpdates = d.object(forKey: "checkUpdates") as? Bool ?? true
+        backdrop = Backdrop(rawValue: d.string(forKey: "backdrop") ?? "") ?? .album
+        accentHex = d.string(forKey: "accentHex")
+        closedLeft = ClosedSlot(rawValue: d.string(forKey: "closedLeft") ?? "") ?? .cover
+        closedRight = ClosedSlot(rawValue: d.string(forKey: "closedRight") ?? "") ?? .wave
+        roundness = d.object(forKey: "roundness") as? Double ?? 1
+        eventEffects = d.object(forKey: "eventEffects") as? Bool ?? true
+        privateAgents = d.bool(forKey: "privateAgents")
     }
 
     /// The motion actually used: Reduce Motion in Accessibility always wins.
@@ -203,6 +236,17 @@ final class Settings: ObservableObject {
         if language != .system { return language.rawValue }
         let mac = Locale.preferredLanguages.first.map { String($0.prefix(2)) } ?? "en"
         return Strings.supported.contains(mac) ? mac : "en"
+    }
+}
+
+extension Color {
+    init?(hex: String) {
+        guard hex.hasPrefix("#"), hex.count == 7, let v = Int(hex.dropFirst(), radix: 16) else { return nil }
+        self.init(red: Double(v >> 16 & 255) / 255, green: Double(v >> 8 & 255) / 255, blue: Double(v & 255) / 255)
+    }
+    var hex: String? {
+        guard let c = NSColor(self).usingColorSpace(.sRGB) else { return nil }
+        return String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
     }
 }
 
@@ -257,8 +301,44 @@ enum Strings {
         "launchAtLogin": ["en": "Open at login", "pt": "Abrir ao iniciar sessão", "es": "Abrir al iniciar sesión"],
         "checkUpdates": ["en": "Tell me when there's an update", "pt": "Avisar quando sair atualização", "es": "Avisarme cuando haya una actualización"],
         "updateAvailable": ["en": "NotchUser %@ is out", "pt": "Saiu o NotchUser %@", "es": "Ya salió NotchUser %@"],
-        "updateHint": ["en": "Click to see what's new and download it", "pt": "Clique pra ver as novidades e baixar", "es": "Haz clic para ver las novedades y descargarla"],
+        "updateHint": ["en": "Click to update now", "pt": "Clique pra atualizar agora", "es": "Haz clic para actualizar ahora"],
         "updateBrew": ["en": "Click to see what's new · brew upgrade notchuser", "pt": "Clique pra ver as novidades · brew upgrade notchuser", "es": "Haz clic para ver las novedades · brew upgrade notchuser"],
+        "moveTitle": ["en": "Move NotchUser to Applications?", "pt": "Mover o NotchUser para Aplicativos?", "es": "¿Mover NotchUser a Aplicaciones?"],
+        "moveBody": ["en": "It's running from Downloads, as a temporary copy made by macOS. In Applications your AI agents, the notch command and opening at login keep working.", "pt": "Ele está rodando de Transferências, numa cópia temporária feita pelo macOS. Em Aplicativos, seus agentes de IA, o comando notch e abrir ao iniciar continuam funcionando.", "es": "Se está ejecutando desde Descargas, como una copia temporal hecha por macOS. En Aplicaciones, tus agentes de IA, el comando notch y abrir al iniciar siguen funcionando."],
+        "moveConfirm": ["en": "Move to Applications", "pt": "Mover para Aplicativos", "es": "Mover a Aplicaciones"],
+        "moveLater": ["en": "Not now", "pt": "Agora não", "es": "Ahora no"],
+        "theme": ["en": "Theme", "pt": "Tema", "es": "Tema"],
+        "accentColor": ["en": "Highlight color", "pt": "Cor de destaque", "es": "Color de resalte"],
+        "accentAlbum": ["en": "From the album", "pt": "Do álbum", "es": "Del álbum"],
+        "accentFixed": ["en": "Always this one", "pt": "Sempre esta", "es": "Siempre este"],
+        "backdropTitle": ["en": "Background", "pt": "Fundo", "es": "Fondo"],
+        "backdrop.album": ["en": "Album", "pt": "Álbum", "es": "Álbum"],
+        "backdrop.black": ["en": "Pure black", "pt": "Preto puro", "es": "Negro puro"],
+        "backdrop.aurora": ["en": "Aurora", "pt": "Aurora", "es": "Aurora"],
+        "closedLayout": ["en": "Closed notch", "pt": "Notch fechado", "es": "Notch cerrado"],
+        "closedLeft": ["en": "Left side", "pt": "Lado esquerdo", "es": "Lado izquierdo"],
+        "closedRight": ["en": "Right side", "pt": "Lado direito", "es": "Lado derecho"],
+        "closedHint": ["en": "While an agent or a build is running, it takes the right side.", "pt": "Enquanto um agente ou build está rodando, ele ocupa o lado direito.", "es": "Mientras un agente o una compilación se ejecuta, ocupa el lado derecho."],
+        "slot.cover": ["en": "Cover", "pt": "Capa", "es": "Portada"],
+        "slot.wave": ["en": "Waves", "pt": "Ondas", "es": "Ondas"],
+        "slot.clock": ["en": "Clock", "pt": "Relógio", "es": "Reloj"],
+        "slot.none": ["en": "Nothing", "pt": "Nada", "es": "Nada"],
+        "roundness": ["en": "Roundness", "pt": "Arredondamento", "es": "Redondez"],
+        "eventEffects": ["en": "Light around the notch when something finishes or waits for you", "pt": "Luz em volta do notch quando algo termina ou espera você", "es": "Luz alrededor del notch cuando algo termina o te espera"],
+        "agentPrefs": ["en": "AI agents", "pt": "Agentes de IA", "es": "Agentes de IA"],
+        "privateAgents": ["en": "Private mode: don't show prompts and answers in the notch", "pt": "Modo privado: não mostrar pedidos e respostas no notch", "es": "Modo privado: no mostrar peticiones y respuestas en el notch"],
+        "approveKeys": ["en": "⌃⌥↩ allows · ⌃⌥⌫ denies", "pt": "⌃⌥↩ permite · ⌃⌥⌫ nega", "es": "⌃⌥↩ permite · ⌃⌥⌫ deniega"],
+        "alwaysAllow": ["en": "Always allow exactly this command in this folder", "pt": "Sempre permitir exatamente este comando nesta pasta", "es": "Permitir siempre exactamente este comando en esta carpeta"],
+        "alwaysAllowed": ["en": "Always allowed", "pt": "Sempre permitidos", "es": "Siempre permitidos"],
+        "remove": ["en": "Remove", "pt": "Remover", "es": "Quitar"],
+        "verifyAgents": ["en": "Check agents", "pt": "Verificar agentes", "es": "Comprobar agentes"],
+        "agentOK": ["en": "working", "pt": "funcionando", "es": "funciona"],
+        "agentBroken": ["en": "the hook didn't run", "pt": "o hook não rodou", "es": "el hook no se ejecutó"],
+        "agentOff": ["en": "not connected", "pt": "não conectado", "es": "no conectado"],
+        "copyError": ["en": "Copy the error", "pt": "Copiar o erro", "es": "Copiar el error"],
+        "whatsNew": ["en": "What's new", "pt": "Novidades", "es": "Novedades"],
+        "updateDownloading": ["en": "Downloading…", "pt": "Baixando…", "es": "Descargando…"],
+        "updateFailed": ["en": "Couldn't update here: opening the release page", "pt": "Não deu pra atualizar aqui: abrindo a página da versão", "es": "No se pudo actualizar aquí: abriendo la página de la versión"],
         "updateTo": ["en": "Update to %@", "pt": "Atualizar para %@", "es": "Actualizar a %@"],
         // Camera mirror
         "copyTextFromScreen": ["en": "Copy text from screen", "pt": "Copiar texto da tela", "es": "Copiar texto de la pantalla"],
@@ -579,7 +659,7 @@ final class NowPlaying: ObservableObject {
     var isPlaying: Bool { current?.playing ?? false }
     var favorited: Bool { current?.favorited ?? false }
     var artwork: NSImage? { current?.artwork }
-    var accent: Color { current?.accent ?? .white }
+    var accent: Color { Settings.shared.fixedAccent ?? current?.accent ?? .white }
     var isMusicApp: Bool { current?.player == .music }
     /// Spotify/Music are always controllable; other apps only while the system reports them.
     var canControl: Bool { current.map { $0.player != nil || $0.bundleID == mrCurrent } ?? false }
@@ -868,7 +948,7 @@ final class NowPlaying: ObservableObject {
                 self.setArtwork(p.bundleID, img)
             }
         }
-        if p == .spotify, let u = URL(string: url) {
+        if p == .spotify, let u = URL(string: url), u.scheme == "https" {
             URLSession.shared.dataTask(with: u) { data, _, _ in done(data.flatMap(NSImage.init(data:))) }.resume()
         } else if p == .music {
             queue.async { [self] in
@@ -1029,6 +1109,17 @@ struct Activity: Codable, Equatable, Identifiable {
         case title, detail, state, progress, question, options, multi, header, step, summary, icon, app, open, pid, started, updated
     }
 
+    /// Commands worth a second look before they're allowed. Never trusted automatically.
+    static func isRisky(_ text: String) -> Bool {
+        let pattern = #"\brm\s+-[a-z]*[rf]|\bsudo\b|\b(curl|wget)\b.*\|\s*(sudo\s+)?(ba|z)?sh\b|git\s+push\b.*(--force|\s-f\b)|git\s+(reset\s+--hard|clean\s+-[a-z]*f)|chmod\s+(-R\s+)?777|\bmkfs\b|\bdd\s+if=|>\s*/dev/(sd|disk|rdisk)|drop\s+(table|database)|:\(\)\s*\{"#
+        return text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+    var risky: Bool { state == .waiting && Activity.isRisky(question ?? "") }
+    /// Exactly this command can be allowed from now on (not risky, and not cut short).
+    var trustable: Bool { agent != nil && !risky && !isChoice && question?.hasSuffix("…") == false }
+    /// How long the buttons sleep after a request appears.
+    var armDelay: TimeInterval { risky ? 1.5 : 0.6 }
+
     /// The coding agent this activity belongs to, if any.
     var agent: Agent? { Agent.allCases.first { id.hasPrefix($0.rawValue + "-") } }
 
@@ -1080,6 +1171,31 @@ enum ActivityFiles {
 }
 
 func processAlive(_ pid: Int32) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
+
+/// Commands you chose to always allow: exactly that text, in exactly that folder.
+enum TrustedCommands {
+    struct Rule: Codable, Hashable, Identifiable {
+        var folder: String
+        var command: String
+        var id: String { folder + "\n" + command }
+    }
+    private static let url = ActivityFiles.dir.deletingLastPathComponent().appendingPathComponent("trusted.json")
+
+    static func all() -> [Rule] {
+        (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([Rule].self, from: $0) } ?? []
+    }
+    static func save(_ rules: [Rule]) {
+        try? JSONEncoder().encode(rules).write(to: url, options: .atomic)
+    }
+    static func add(folder: String, command: String) {
+        let rule = Rule(folder: folder, command: command)
+        var rules = all()
+        if !rules.contains(rule) { rules.append(rule); save(rules) }
+    }
+    static func allows(folder: String, command: String) -> Bool {
+        !Activity.isRisky(command) && all().contains(Rule(folder: folder, command: command))
+    }
+}
 
 /// Follows the activities folder. Idle costs nothing: the kernel wakes it when a file changes.
 final class Activities: ObservableObject {
@@ -1216,6 +1332,10 @@ final class Activities: ObservableObject {
     }
 
     func activate(_ a: Activity) {
+        if a.isUpdate {
+            if a.state == .done { Updates.shared.install() }
+            return
+        }
         if let o = a.open, let url = o.hasPrefix("/") ? URL(fileURLWithPath: o) : URL(string: o) {
             NSWorkspace.shared.open(url)
         } else if let b = a.app {
@@ -1233,8 +1353,9 @@ final class Activities: ObservableObject {
 final class Updates {
     static let shared = Updates()
     static let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
-    private(set) var available: (version: String, page: URL)?
+    private(set) var available: (version: String, page: URL, asset: URL?, digest: String?)?
     private var timer: Timer?
+    private var installing = false
 
     func start() {
         timer?.invalidate()
@@ -1254,9 +1375,13 @@ final class Updates {
         URLSession.shared.dataTask(with: req) { data, _, _ in
             guard let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tag = json["tag_name"] as? String,
-                  let page = (json["html_url"] as? String).flatMap(URL.init(string:)) else { return }
+                  let page = (json["html_url"] as? String).flatMap(URL.init(string:)),
+                  page.scheme == "https", page.host == "github.com" else { return }
             let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-            DispatchQueue.main.async { self.found(version, page) }
+            let zip = (json["assets"] as? [[String: Any]])?.first { $0["name"] as? String == "NotchUser.zip" }
+            let asset = (zip?["browser_download_url"] as? String).flatMap(URL.init(string:))
+            let digest = zip?["digest"] as? String
+            DispatchQueue.main.async { self.found(version, page, asset, digest) }
         }.resume()
     }
 
@@ -1275,15 +1400,134 @@ final class Updates {
         ["/opt/homebrew", "/usr/local"].contains { FileManager.default.fileExists(atPath: $0 + "/Caskroom/notchuser") }
     }
 
-    private func found(_ version: String, _ page: URL) {
+    private func found(_ version: String, _ page: URL, _ asset: URL?, _ digest: String?) {
         guard Self.newer(version, than: Self.current) else { available = nil; return }
-        available = (version, page)
+        available = (version, page, asset, digest)
         let d = UserDefaults.standard
         guard d.string(forKey: "updateAnnounced") != version else { return }
         d.set(version, forKey: "updateAnnounced")
         ActivityFiles.write(Activity(id: "update-" + version, title: L("updateAvailable", version),
                                      detail: L(viaHomebrew ? "updateBrew" : "updateHint"), state: .done,
-                                     icon: "arrow.down.circle.fill", open: page.absoluteString, started: Date()))
+                                     icon: "arrow.down.circle.fill", started: Date()))
+    }
+
+    private struct Refused: Error {}
+
+    /// One click: download, check it's the published file and the right app, swap, reopen.
+    /// With Homebrew (the cask owns the app), or if anything looks wrong, the release page opens instead.
+    func install() {
+        guard let u = available, !installing else { return }
+        guard !viaHomebrew, let asset = u.asset, asset.scheme == "https", asset.host == "github.com", let digest = u.digest else {
+            NSWorkspace.shared.open(u.page)
+            return
+        }
+        installing = true
+        let id = "update-" + u.version
+        func say(_ state: Activity.State, _ detail: String) {
+            ActivityFiles.write(Activity(id: id, title: L("updateAvailable", u.version), detail: detail, state: state,
+                                         icon: "arrow.down.circle.fill", started: Date()))
+        }
+        say(.running, L("updateDownloading"))
+        URLSession.shared.downloadTask(with: asset) { file, response, _ in
+            do {
+                guard let file, (response as? HTTPURLResponse)?.statusCode == 200 else { throw Refused() }
+                let sum = SHA256.hash(data: try Data(contentsOf: file, options: .mappedIfSafe))
+                guard digest == "sha256:" + sum.map({ String(format: "%02x", $0) }).joined() else { throw Refused() }
+                let fm = FileManager.default
+                let dir = fm.temporaryDirectory.appendingPathComponent("notchuser-update-" + UUID().uuidString)
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                defer { try? fm.removeItem(at: dir) }
+                try Self.run("/usr/bin/ditto", ["-x", "-k", file.path, dir.path])
+                let new = dir.appendingPathComponent("NotchUser.app")
+                guard let info = Bundle(url: new)?.infoDictionary, info["CFBundleIdentifier"] as? String == ActivityFiles.appID,
+                      info["CFBundleShortVersionString"] as? String == u.version else { throw Refused() }
+                try Self.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", new.path])
+                let target = AppLocation.misplaced ? URL(fileURLWithPath: "/Applications/NotchUser.app") : Bundle.main.bundleURL
+                var trashed: NSURL?
+                if fm.fileExists(atPath: target.path) { try fm.trashItem(at: target, resultingItemURL: &trashed) }
+                do {
+                    try fm.moveItem(at: new, to: target)
+                } catch {
+                    if let old = trashed as URL? { try? fm.moveItem(at: old, to: target) }
+                    throw error
+                }
+                let again = Process()
+                again.executableURL = URL(fileURLWithPath: "/bin/sh")
+                again.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", target.path]
+                try again.run()
+                ActivityFiles.remove(id)
+                DispatchQueue.main.async { NSApp.terminate(nil) }
+            } catch {
+                DispatchQueue.main.async {
+                    self.installing = false
+                    say(.failed, L("updateFailed"))
+                    NSWorkspace.shared.open(u.page)
+                }
+            }
+        }.resume()
+    }
+
+    private static func run(_ tool: String, _ args: [String]) throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: tool)
+        p.arguments = args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try p.run()
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { throw Refused() }
+    }
+}
+
+/// Opened from Downloads, macOS runs a temporary copy that disappears (and can't start at login):
+/// offer to move the app where it belongs.
+enum AppLocation {
+    static var misplaced: Bool {
+        let path = Bundle.main.bundlePath
+        let downloads = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads").path
+        return path.contains("/AppTranslocation/") || path.hasPrefix(downloads + "/")
+    }
+
+    /// Where the temporary copy came from (nil when it isn't one).
+    private static var original: URL? {
+        typealias Original = @convention(c) (CFURL, UnsafeMutablePointer<Unmanaged<CFError>?>?) -> Unmanaged<CFURL>?
+        guard Bundle.main.bundlePath.contains("/AppTranslocation/"),
+              let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SecTranslocateCreateOriginalPathForURL") else { return nil }
+        let call = unsafeBitCast(symbol, to: Original.self)
+        return call(Bundle.main.bundleURL as CFURL, nil)?.takeRetainedValue() as URL?
+    }
+
+    static func offerMove() {
+        guard misplaced else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        let ask = NSAlert()
+        ask.messageText = L("moveTitle")
+        ask.informativeText = L("moveBody")
+        ask.addButton(withTitle: L("moveConfirm"))
+        ask.addButton(withTitle: L("moveLater"))
+        guard ask.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            let fm = FileManager.default
+            let target = URL(fileURLWithPath: "/Applications/NotchUser.app")
+            let source = original ?? Bundle.main.bundleURL
+            if fm.fileExists(atPath: target.path) { try fm.trashItem(at: target, resultingItemURL: nil) }
+            try fm.copyItem(at: Bundle.main.bundleURL, to: target)
+            // The first launch was already approved; without this macOS would make another temporary copy.
+            let clear = Process()
+            clear.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+            clear.arguments = ["-dr", "com.apple.quarantine", target.path]
+            try clear.run()
+            clear.waitUntilExit()
+            if source != target { try? fm.trashItem(at: source, resultingItemURL: nil) }
+            let again = Process()
+            again.executableURL = URL(fileURLWithPath: "/bin/sh")
+            again.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", target.path]
+            try again.run()
+            NSApp.terminate(nil)
+        } catch {
+            let failed = NSAlert(error: error)
+            failed.runModal()
+        }
     }
 }
 
@@ -1387,6 +1631,18 @@ enum CLI {
 
     private static func folderName(_ path: String) -> String { URL(fileURLWithPath: path).lastPathComponent }
 
+    private static var privateMode: Bool {
+        CFPreferencesCopyAppValue("privateAgents" as CFString, ActivityFiles.appID as CFString) as? Bool == true
+    }
+
+    /// Clicking goes back to the very window, for the editors that can be asked for one.
+    private static func windowLink(_ folder: String) -> String? {
+        let schemes = ["com.microsoft.VSCode": "vscode", "com.todesktop.230313mzl4w4u92": "cursor"]
+        guard !folder.isEmpty, let scheme = hostApp.flatMap({ schemes[$0] }),
+              let path = folder.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+        return "\(scheme)://file\(path)"
+    }
+
     private static func runCommand(_ args: [String]) -> Int32 {
         let (opts, cmd) = parse(args, command: true)
         guard !cmd.isEmpty else { return fail() }
@@ -1455,12 +1711,13 @@ enum CLI {
         return answer == "allow" ? 0 : answer == "deny" ? 1 : 2
     }
 
+    /// What to leave behind if the wait is cancelled; nil takes the question's own file away.
     private static var restoreOnSignal: Activity?
     private static var signalSources: [DispatchSourceSignal] = []
 
     /// Shows the question and waits for the notch's answer. Gives up (nil) when the time runs
     /// out or the app quits, and puts the activity back to running either way.
-    private static func waitForAnswer(_ a: Activity, timeout: TimeInterval) -> String? {
+    private static func waitForAnswer(_ a: Activity, timeout: TimeInterval, ownFile: Bool = false) -> String? {
         guard enabled else { return nil }
         let replyURL = ActivityFiles.url(a.id, "reply")
         try? FileManager.default.removeItem(at: replyURL)
@@ -1475,12 +1732,12 @@ enum CLI {
         after.header = nil
         after.step = nil
         // Cancelled (e.g. the question was answered elsewhere): don't leave it up in the notch.
-        restoreOnSignal = after
+        restoreOnSignal = ownFile ? nil : after
         for s in [SIGTERM, SIGINT, SIGHUP] {
             signal(s, SIG_IGN)
             let src = DispatchSource.makeSignalSource(signal: s, queue: .global())
             src.setEventHandler {
-                if let r = restoreOnSignal { ActivityFiles.write(r) }
+                if let r = restoreOnSignal { ActivityFiles.write(r) } else { ActivityFiles.remove(a.id) }
                 exit(128 + s)
             }
             src.resume()
@@ -1501,7 +1758,7 @@ enum CLI {
             }
             usleep(200_000)
         }
-        ActivityFiles.write(after)
+        if ownFile { ActivityFiles.remove(a.id) } else { ActivityFiles.write(after) }
         return answer
     }
 
@@ -1510,7 +1767,11 @@ enum CLI {
     private static func agentHook(_ agent: Agent, event named: String?) -> Int32 {
         let input = FileHandle.standardInput.readDataToEndOfFile()
         guard enabled, let j = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any],
-              let event = (j["hook_event_name"] as? String) ?? named else { return 0 }
+              let event = (j["hook_event_name"] as? String) ?? named else {
+            // Codex reads a hook's output as JSON.
+            if agent == .codex { FileHandle.standardOutput.write(Data("{}".utf8)) }
+            return 0
+        }
         let session = (j["session_id"] as? String) ?? (j["sessionId"] as? String) ?? "session"
         let id = agent.rawValue + "-" + ActivityFiles.safe(String(session.prefix(12)))
         let folder = folderName(j["cwd"] as? String ?? "")
@@ -1520,6 +1781,7 @@ enum CLI {
         a.title = folder.isEmpty || folder == "/" ? agent.name : "\(agent.name) · \(folder)"
         a.icon = agent.icon
         a.app = a.app ?? hostApp ?? agent.app
+        a.open = a.open ?? windowLink(j["cwd"] as? String ?? "")
 
         switch event {
         case "UserPromptSubmit", "userPromptSubmitted":
@@ -1528,17 +1790,30 @@ enum CLI {
             a.summary = nil
             a.started = Date()
             let prompt = (j["prompt"] as? String ?? "").split(separator: "\n").first.map(String.init) ?? ""
-            a.detail = String(prompt.prefix(90))
+            // Messages the app itself sends the agent (<task-notification>…) aren't what you asked.
+            if privateMode { a.detail = nil } else if !prompt.hasPrefix("<") { a.detail = String(prompt.prefix(90)) }
             ActivityFiles.write(a)
         case "PermissionRequest", "permissionRequest":
-            if existing == nil || a.finished { a.started = Date() }
             let tool = (j["tool_name"] as? String) ?? (j["toolName"] as? String) ?? ""
             var args = (j["tool_input"] as? [String: Any]) ?? (j["toolArgs"] as? [String: Any]) ?? [:]
             if args.isEmpty, let text = j["toolArgs"] as? String,
                let parsed = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] { args = parsed }
-            a.question = describe(tool: tool, input: args)
-            // The agent waits up to the hook's timeout (600 s); answer a little before that.
-            guard let reply = waitForAnswer(a, timeout: 590), reply == "allow" || reply == "deny" else { return 0 }
+            // An agent can ask several things at once: each request has its own file and its own
+            // answer, so an Allow can only ever release the command it was shown for.
+            var request = a
+            request.id = "\(id)-\(getpid())"
+            request.pid = getpid()
+            request.started = Date()
+            let command = describe(tool: tool, input: args)
+            let cwd = j["cwd"] as? String ?? ""
+            request.question = command
+            var reply = "allow"
+            if !TrustedCommands.allows(folder: cwd, command: command) {
+                // The agent waits up to the hook's timeout (600 s); answer a little before that.
+                guard let answer = waitForAnswer(request, timeout: 590, ownFile: true), ["allow", "deny", "always"].contains(answer) else { return 0 }
+                reply = answer == "deny" ? "deny" : "allow"
+                if answer == "always", !Activity.isRisky(command), !command.hasSuffix("…") { TrustedCommands.add(folder: cwd, command: command) }
+            }
             var decision: [String: Any] = ["behavior": reply]
             if reply == "deny" { decision["message"] = "The user denied this from the notch (NotchUser)." }
             let out: [String: Any] = agent == .copilot
@@ -1554,7 +1829,7 @@ enum CLI {
             a.state = .done
             a.question = nil
             // Claude Code and Codex pass what they just said: the notch shows it as the result.
-            a.summary = (j["last_assistant_message"] as? String).flatMap(summarize)
+            a.summary = privateMode ? nil : (j["last_assistant_message"] as? String).flatMap(summarize)
             ActivityFiles.write(a)
         case "SessionEnd", "sessionEnd":
             ActivityFiles.remove(id)
@@ -1618,10 +1893,14 @@ enum CLI {
     /// "Bash: npm test", "Edit: main.swift"…
     private static func describe(tool: String, input: [String: Any]) -> String {
         let subject: String? = (input["command"] as? String)
-            ?? (input["file_path"] as? String).map(folderName)
+            ?? (input["file_path"] as? String).map { ($0 as NSString).abbreviatingWithTildeInPath }
             ?? (input["url"] as? String) ?? (input["pattern"] as? String) ?? (input["description"] as? String)
         let line = subject.map { "\(tool): \($0)" } ?? tool
-        return String(line.replacingOccurrences(of: "\n", with: " ").prefix(140))
+        // This text is what gets approved: nothing in it may hide or reorder what follows.
+        let shown = String(String.UnicodeScalarView(line.unicodeScalars.map { u -> Unicode.Scalar in
+            u.properties.generalCategory == .control || u.properties.generalCategory == .format ? " " : u
+        }))
+        return shown.count > 400 ? String(shown.prefix(399)) + "…" : shown
     }
 }
 
@@ -1647,6 +1926,11 @@ final class DevTasks {
         "pip": ["install"], "pip3": ["install"], "uv": ["sync", "pip"], "pytest": [], "poetry": ["install", "build"],
         "brew": ["install", "upgrade", "reinstall", "update"], "pod": ["install", "update"],
         "docker": ["build", "compose", "push", "pull"], "gradle": [], "gradlew": [], "mvn": [], "mvnw": [],
+        "swift": ["build", "test"], "swiftc": [], "tsc": [], "vite": ["build"], "next": ["build"], "webpack": [], "rollup": [],
+        "esbuild": [], "turbo": ["build", "test", "lint"], "nx": ["build", "test"], "jest": [], "vitest": ["run"],
+        "playwright": ["test"], "cypress": ["run"], "dotnet": ["build", "test", "publish", "restore"],
+        "flutter": ["build", "test", "pub"], "expo": ["export", "prebuild"], "composer": ["install", "update"],
+        "bundle": ["install"], "rake": [],
         "vercel": [], "netlify": ["deploy", "build"], "firebase": ["deploy"], "fly": ["deploy"], "flyctl": ["deploy"],
         "eas": ["build", "submit", "update"], "terraform": ["apply", "plan", "init"], "gh": ["run"],
         "git": ["clone", "push", "pull", "fetch"], "rsync": [], "scp": [],
@@ -1724,10 +2008,16 @@ final class DevTasks {
         guard var i = args.indices.first else { return nil }
         var tool = base(args[i])
         if interpreters.contains(tool) {
+            let shell = ["bash", "sh", "zsh"].contains(tool)
             // The script: the first argument that isn't a flag.
             guard let s = args.indices.dropFirst().first(where: { !args[$0].hasPrefix("-") }) else { return nil }
             i = s
             tool = base(args[i])
+            // Your own build.sh, deploy.sh… (`sh -c "…"` is a command line: what it starts is found by itself.)
+            if shell, !args.contains("-c"), tools[tool] == nil, !args[i].contains(" "),
+               scriptWords.contains(where: tool.lowercased().contains) {
+                return (tool, tool.lowercased().contains("test") ? "testtube.2" : "hammer.fill")
+            }
         }
         guard let sub = tools[tool] else { return nil }
         var rest: [String] = []
@@ -1853,6 +2143,28 @@ enum AgentHooks {
         return list
     }
     private static var binary: String { Bundle.main.executablePath ?? "/Applications/NotchUser.app/Contents/MacOS/NotchUser" }
+    private static let support = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/NotchUser", isDirectory: true)
+    /// What the agents run. The app can move (Downloads, a temporary copy macOS made, Homebrew), so
+    /// their settings point here, this follows the app, and with no app there it stays quiet
+    /// instead of showing the agent a hook error on every prompt.
+    private static var script: URL { support.appendingPathComponent("hook") }
+
+    private static func writeScript() {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: support, withIntermediateDirectories: true)
+        try? binary.write(to: support.appendingPathComponent("app-path"), atomically: true, encoding: .utf8)
+        let text = """
+        #!/bin/sh
+        app="$(cat "$HOME/Library/Application Support/NotchUser/app-path" 2>/dev/null)"
+        [ -x "$app" ] && exec "$app" "$@"
+        [ "$2" = codex ] && printf '{}'
+        exit 0
+
+        """
+        try? text.write(to: script, atomically: true, encoding: .utf8)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    }
 
     /// Each agent's own variable for moving its settings folder is followed.
     static func configURL(_ agent: Agent) -> URL {
@@ -1870,9 +2182,9 @@ enum AgentHooks {
 
     private static func command(_ agent: Agent, _ event: String) -> String {
         switch agent {
-        case .claude: return "\"\(binary)\" claude-hook"  // what earlier versions installed
-        case .codex: return "\"\(binary)\" agent-hook codex"
-        case .copilot: return "\"\(binary)\" agent-hook copilot \(event)"
+        case .claude: return "\"\(script.path)\" claude-hook"  // what earlier versions installed
+        case .codex: return "\"\(script.path)\" agent-hook codex"
+        case .copilot: return "\"\(script.path)\" agent-hook copilot \(event)"
         }
     }
 
@@ -1885,7 +2197,8 @@ enum AgentHooks {
     struct Unreadable: Error {}
 
     private static func load(_ url: URL) throws -> [String: Any] {
-        guard let data = try? Data(contentsOf: url) else { return [:] }  // no file yet
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }  // no file yet
+        guard let data = try? Data(contentsOf: url) else { throw Unreadable() }  // never overwrite what couldn't be read
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Unreadable() }
         return root
     }
@@ -1899,14 +2212,23 @@ enum AgentHooks {
         }
     }
 
-    /// Connected by an earlier version, which had fewer hooks: bring it up to date.
+    /// At every launch: the script learns where the app is now, and an agent connected by an earlier
+    /// version (fewer hooks, or a path to the app that may be gone) is brought up to date.
     static func upgrade() {
-        for agent in Agent.allCases where agent != .copilot && !installed(agent) {
-            guard let hooks = (try? load(configURL(agent)))?["hooks"] as? [String: Any] else { continue }
-            let ours = hooks.values.contains { groups in
-                ((groups as? [[String: Any]]) ?? []).contains { (($0["hooks"] as? [Any]) ?? []).contains(where: isOurs) }
+        writeScript()
+        for agent in Agent.allCases {
+            let url = configURL(agent)
+            if agent == .copilot {
+                guard let text = try? String(contentsOf: url, encoding: .utf8), !text.contains(script.path) else { continue }
+                try? set(agent, true)
+                continue
             }
-            if ours { try? set(agent, true) }
+            guard let hooks = (try? load(url))?["hooks"] as? [String: Any] else { continue }
+            let ours = hooks.values.flatMap { groups in
+                ((groups as? [[String: Any]]) ?? []).flatMap { (($0["hooks"] as? [Any]) ?? []).filter(isOurs) }
+            }
+            let current = ours.allSatisfy { (($0 as? [String: Any])?["command"] as? String)?.contains(script.path) == true }
+            if !ours.isEmpty && (!installed(agent) || !current) { try? set(agent, true) }
         }
     }
 
@@ -1915,6 +2237,7 @@ enum AgentHooks {
     static func set(_ agent: Agent, _ on: Bool) throws {
         let url = configURL(agent)
         let fm = FileManager.default
+        if on { writeScript() }
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if agent == .copilot {
             // Copilot reads every file in its hooks folder, so NotchUser simply has its own.
@@ -1955,9 +2278,28 @@ enum AgentHooks {
         try write(root, to: url)
     }
 
+    /// Runs the connected agent's hook as the agent would. nil: it isn't connected.
+    static func works(_ agent: Agent) -> Bool? {
+        upgrade()
+        guard installed(agent) else { return nil }
+        let p = Process()
+        p.executableURL = script
+        p.arguments = agent == .claude ? ["claude-hook"] : ["agent-hook", agent.rawValue]
+        let input = Pipe()
+        p.standardInput = input
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return false }
+        input.fileHandleForWriting.write(Data("{}".utf8))
+        try? input.fileHandleForWriting.close()
+        p.waitUntilExit()
+        return p.terminationStatus == 0 && FileManager.default.isExecutableFile(atPath: binary)
+    }
+
     private static func write(_ root: [String: Any], to url: URL) throws {
         let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys])
-        try data.write(to: url, options: .atomic)
+        // Through a symlink (dotfiles kept in a repository), not over it.
+        try data.write(to: url.resolvingSymlinksInPath(), options: .atomic)
     }
 }
 
@@ -3303,6 +3645,8 @@ final class NotchState: ObservableObject {
     @Published var mirrorOn = false      // the camera mirror replaces the usual sections
     @Published var proximity: CGFloat = 0  // 0 far ... 1 on the closed notch (magnetism)
     @Published var pulse = 0             // each increment sends a ripple out of the notch
+    @Published var sweep = 0             // each increment runs a light around the notch
+    var sweepColor: Color = .green
     var pulseColor: Color = .white
     /// Volume (or a skipped song) shown next to the camera while it changes.
     struct Level: Equatable {
@@ -3508,6 +3852,11 @@ struct NotchFrame: ViewModifier, Animatable {
     var ooze: CGFloat
     var scale: CGFloat
     var glass: Bool
+    var roundness: CGFloat = 1
+    var waiting = false
+    var sweep = 0
+    var sweepColor: Color = .white
+    var effects = false
 
     var animatableData: AnimatablePair<CGFloat, AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>>> {
         get { .init(progress, .init(.init(closed.width, closed.height), .init(open.width, open.height))) }
@@ -3527,7 +3876,7 @@ struct NotchFrame: ViewModifier, Animatable {
         let h = max(closed.height + (open.height - closed.height) * hp, 1)
         let t = min(max(p, 0), 1)
         let top = min(6 + 6 * min(max(wp, 0), 1.2), w / 4)
-        let bottom = min(10 + 22 * min(max(hp, 0), 1.2), max(h / 2, 2))
+        let bottom = min(10 + 22 * roundness * min(max(hp, 0), 1.2), max(h / 2, 2))
         let shape = NotchShape(topR: top, botR: bottom)
         content
             .frame(width: w, height: h, alignment: .top)
@@ -3546,6 +3895,12 @@ struct NotchFrame: ViewModifier, Animatable {
                     .init(color: .white.opacity(glass ? 0.45 : 0.28), location: 1),
                 ], startPoint: .top, endPoint: .bottom), lineWidth: 1)
                     .opacity(t))
+            .overlay {
+                if effects {
+                    if waiting { WaitingGlow(shape: shape).transition(.opacity) }
+                    EventSweep(shape: shape, trigger: sweep, color: sweepColor)
+                }
+            }
             .scaleEffect(1 + (scale - 1) * t, anchor: .top)
     }
 }
@@ -3555,21 +3910,109 @@ struct Ripple: View {
     var trigger: Int
     var color: Color
     var size: CGSize
-    @StateObject private var phase = Box<CGFloat>(1)
 
     var body: some View {
-        NotchShape(topR: 6, botR: 10)
-            .stroke(color, lineWidth: 1.5)
-            .frame(width: size.width, height: size.height)
-            .scaleEffect(x: 1 + 0.35 * phase.value, y: 1 + 1.4 * phase.value, anchor: .top)
-            .opacity(Double(1 - phase.value) * 0.8)
-            .blur(radius: 1 + 3 * phase.value)
-            .allowsHitTesting(false)
-            .onChange(of: trigger) { _, _ in
-                phase.value = 0
-                withAnimation(.easeOut(duration: 0.75)) { phase.value = 1 }
-            }
+        KeyframeAnimator(initialValue: CGFloat(1), trigger: trigger) { phase in
+            NotchShape(topR: 6, botR: 10)
+                .stroke(color, lineWidth: 1.5)
+                .frame(width: size.width, height: size.height)
+                .scaleEffect(x: 1 + 0.35 * phase, y: 1 + 1.4 * phase, anchor: .top)
+                .opacity(Double(1 - phase) * 0.8)
+                .blur(radius: 1 + 3 * phase)
+        } keyframes: { _ in
+            MoveKeyframe(0)
+            CubicKeyframe(1, duration: 0.75)
+        }
+        .allowsHitTesting(false)
     }
+}
+
+/// A light running once around the notch: green or red when something finishes.
+struct EventSweep: View {
+    var shape: NotchShape
+    var trigger: Int
+    var color: Color
+
+    var body: some View {
+        KeyframeAnimator(initialValue: CGFloat(1), trigger: trigger) { phase in
+            let head = phase * 1.3
+            ZStack {
+                shape.trim(from: max(0, head - 0.3), to: min(1, head)).stroke(color, style: StrokeStyle(lineWidth: 6, lineCap: .round)).blur(radius: 5)
+                shape.trim(from: max(0, head - 0.3), to: min(1, head)).stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            }
+            .opacity(phase < 1 ? 1 : 0)
+        } keyframes: { _ in
+            MoveKeyframe(0)
+            CubicKeyframe(1, duration: 1.1)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// An amber breath around the notch while something waits for an answer.
+struct WaitingGlow: View {
+    var shape: NotchShape
+
+    var body: some View {
+        ZStack {
+            shape.stroke(Color.orange, lineWidth: 5).blur(radius: 4)
+            shape.stroke(Color.orange, lineWidth: 1.5)
+        }
+        .phaseAnimator([false, true]) { view, bright in
+            view.opacity(bright ? 1 : 0.25)
+        } animation: { _ in .easeInOut(duration: 0.9) }
+        .allowsHitTesting(false)
+    }
+}
+
+/// Slow patches of light in the accent's family of colors, played by Core Animation.
+final class AuroraLayerView: AnimatedLayerView {
+    var color: NSColor = .white { didSet { if color != oldValue { paint() } } }
+    private var blobs: [CAGradientLayer] = []
+
+    private func paint() {
+        let c = color.usingColorSpace(.deviceRGB) ?? color
+        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
+        for (i, blob) in blobs.enumerated() {
+            let hue = (h + [0, 0.07, -0.07][i] + 1).truncatingRemainder(dividingBy: 1)
+            let tint = NSColor(hue: hue, saturation: max(sat, 0.45), brightness: max(b, 0.75), alpha: 0.75)
+            blob.colors = [tint.cgColor, tint.withAlphaComponent(0).cgColor]
+        }
+    }
+
+    override func rebuild() {
+        root.sublayers?.forEach { $0.removeFromSuperlayer() }
+        blobs = (0..<3).map { i in
+            let g = CAGradientLayer()
+            g.type = .radial
+            g.startPoint = CGPoint(x: 0.5, y: 0.5)
+            g.endPoint = CGPoint(x: 1, y: 1)
+            let size = bounds.width * 0.8
+            g.frame = CGRect(x: 0, y: 0, width: size, height: size)
+            let from = CGPoint(x: bounds.width * [0.15, 0.85, 0.5][i], y: bounds.height * [0.2, 0.3, 0.1][i])
+            let to = CGPoint(x: bounds.width * [0.6, 0.35, 0.9][i], y: bounds.height * [0.5, 0.05, 0.45][i])
+            g.position = from
+            let move = CABasicAnimation(keyPath: "position")
+            move.fromValue = from
+            move.toValue = to
+            move.duration = [11, 15, 19][i]
+            move.autoreverses = true
+            move.repeatCount = .infinity
+            move.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            move.isRemovedOnCompletion = false
+            g.add(move, forKey: "drift")
+            root.addSublayer(g)
+            return g
+        }
+        paint()
+    }
+}
+
+struct Aurora: NSViewRepresentable {
+    var color: Color
+    func makeNSView(context: Context) -> AuroraLayerView { AuroraLayerView() }
+    func updateNSView(_ v: AuroraLayerView, context: Context) { v.color = NSColor(color) }
 }
 
 /// Sections of the open notch come in one after the other, sliding down from the camera.
@@ -3975,6 +4418,7 @@ extension Activity {
 
     var color: Color {
         if isUpdate { return Color(red: 0.54, green: 0.36, blue: 0.96) }
+        if risky { return Color(red: 1, green: 0.3, blue: 0.3) }
         switch state {
         case .running: return Color(red: 0.38, green: 0.64, blue: 1)
         case .waiting: return .orange
@@ -4083,6 +4527,7 @@ struct QuestionView: View {
     @ObservedObject var ui: NotchState
     @StateObject private var picked = Box<Set<String>>([])
     @StateObject private var sent = Box(false)
+    @StateObject private var armed = Box(false)  // see ActivityRow
 
     var body: some View {
         let options = Array((item.options ?? []).prefix(4))
@@ -4134,6 +4579,11 @@ struct QuestionView: View {
             .padding(.top, 10)
             if ui.showMedia { miniPlayer.padding(.top, 10) }
         }
+        .task(id: item.question) {
+            armed.value = false
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            armed.value = true
+        }
     }
 
     /// The song keeps playing while you answer, so it stays in view, small.
@@ -4157,7 +4607,7 @@ struct QuestionView: View {
     }
 
     private func pick(_ option: Activity.Option) {
-        guard !sent.value else { return }
+        guard !sent.value, armed.value else { return }
         if item.multi == true {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 if picked.value.contains(option.label) { picked.value.remove(option.label) } else { picked.value.insert(option.label) }
@@ -4424,6 +4874,10 @@ struct ActivityButtonStyle: ButtonStyle {
 struct ActivityRow: View {
     var item: Activity
     var activities: Activities
+    /// The notch can open right under a click meant for something else, and a new request can take
+    /// the place of the one just answered: the buttons wake up only after a moment.
+    @StateObject private var armed = Box(false)
+    @StateObject private var hovering = Box(false)
     var body: some View {
         HStack(spacing: 12) {
             ActivityBadge(item: item, size: 30)
@@ -4433,6 +4887,10 @@ struct ActivityRow: View {
                 Group {
                     if item.state == .running {
                         TimelineView(MinuteSchedule(start: item.started ?? Date())) { ctx in Text(item.subtitle(at: ctx.date)) }
+                    } else if item.state == .waiting, hovering.value, (item.question?.count ?? 0) > 60 {
+                        // A long command: under the mouse it rolls by, so all of it can be read.
+                        Marquee(text: item.question ?? "", font: .system(size: 11.5, design: .monospaced), color: .white.opacity(0.9),
+                                height: 28, rolling: true)
                     } else {
                         Text(item.subtitle(at: Date()))
                     }
@@ -4440,17 +4898,41 @@ struct ActivityRow: View {
                 .font(.system(size: 11.5, design: item.state == .waiting ? .monospaced : .default))
                 .foregroundColor(item.state == .waiting ? .white.opacity(0.8) : .white.opacity(0.55))
                 .truncationMode(.middle)
+                .lineLimit(item.state == .waiting ? 2 : 1)
             }
             .lineLimit(1)
+            .onHover { hovering.value = $0 }
             Spacer(minLength: 8)
             if item.state == .waiting {
                 HStack(spacing: 6) {
+                    if item.trustable {
+                        ControlButton(symbol: "checkmark.seal", size: 12, color: .white.opacity(0.6), box: 24) { activities.answer(item, "always") }
+                            .help(L("alwaysAllow"))
+                    }
                     Button(L("deny")) { activities.answer(item, "deny") }.buttonStyle(ActivityButtonStyle(primary: false))
                     Button(L("allow")) { activities.answer(item, "allow") }.buttonStyle(ActivityButtonStyle(primary: true))
                 }
+                .help(L("approveKeys"))
+                .disabled(!armed.value)
+                .opacity(armed.value ? 1 : 0.45)
+                .task(id: item.question) {
+                    armed.value = false
+                    try? await Task.sleep(nanoseconds: UInt64(item.armDelay * 1_000_000_000))
+                    withAnimation(.easeOut(duration: 0.15)) { armed.value = true }
+                }
                 .transition(.scale(scale: 0.8).combined(with: .opacity))
             } else if item.finished {
-                ControlButton(symbol: "xmark", size: 10, color: .white.opacity(0.4), box: 24) { activities.dismiss(item) }
+                if item.state == .failed, let detail = item.detail {
+                    // Why it failed, ready to paste somewhere.
+                    ControlButton(symbol: "doc.on.doc", size: 11, color: .white.opacity(0.55), box: 24) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(detail, forType: .string)
+                    }
+                    .help(L("copyError"))
+                }
+                if !item.isUpdate || item.state != .running {
+                    ControlButton(symbol: "xmark", size: 10, color: .white.opacity(0.4), box: 24) { activities.dismiss(item) }
+                }
             }
         }
         .frame(height: NotchState.activityHeight)
@@ -4495,13 +4977,14 @@ struct Marquee: View {
     var font: Font
     var color: Color
     var height: CGFloat
+    var rolling = false  // rolls on its own, not only under the mouse
     @StateObject private var hover = Box<Bool>(false)
     @StateObject private var textWidth = Box<CGFloat>(0)
 
     var body: some View {
         GeometryReader { g in
             let overflow = max(0, textWidth.value - g.size.width)
-            let rolling = hover.value && overflow > 0
+            let rolling = (hover.value || self.rolling) && overflow > 0
             ZStack(alignment: .leading) {
                 // Measures the full text once; never shown.
                 Text(text).font(font).fixedSize().hidden()
@@ -4548,12 +5031,13 @@ struct Marquee: View {
 struct PanelMaterial: View {
     var glass: Bool
     var tint: Color
+    var corner: CGFloat = 32
     var body: some View {
         if glass { liquid } else { VisualEffect() }
     }
     @ViewBuilder private var liquid: some View {
         if #available(macOS 26.0, *) {
-            Color.clear.glassEffect(.clear.tint(tint.opacity(0.22)), in: NotchShape(topR: 12, botR: 32))
+            Color.clear.glassEffect(.clear.tint(tint.opacity(0.22)), in: NotchShape(topR: 12, botR: corner))
         } else {
             VisualEffect()
         }
@@ -4715,7 +5199,10 @@ struct ControlButton: View {
                 .foregroundColor(color)
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: box, height: box)
+                // Small buttons look small but are still easy to hit.
+                .padding(max(0, (36 - box) / 2))
                 .contentShape(Circle())
+                .padding(-max(0, (36 - box) / 2))
         }
         .buttonStyle(PressStyle(hover: hover.value))
         .onHover { hover.value = $0 }
@@ -4797,7 +5284,8 @@ enum NotchMenu {
         m.delegate = c.menuWatcher
 
         if let update = Updates.shared.available {
-            m.addItem(item(L("updateTo", update.version), "arrow.down.circle") { NSWorkspace.shared.open(update.page) })
+            m.addItem(item(L("updateTo", update.version), "arrow.down.circle") { Updates.shared.install() })
+            m.addItem(item(L("whatsNew"), "sparkles") { NSWorkspace.shared.open(update.page) })
             m.addItem(.separator())
         }
         if settings.ocrEnabled {
@@ -5086,6 +5574,7 @@ struct NotchView: View {
     @ObservedObject var settings = Settings.shared
     /// The volume slider is out (the app icons beside it step aside).
     @StateObject private var volumeOpen = Box(false)
+    @StateObject private var activityPage = Box(0)
 
     private var profile: MotionProfile { settings.effectiveMotion.profile(speed: settings.motionSpeed) }
 
@@ -5109,9 +5598,16 @@ struct NotchView: View {
             // at the top so it still blends with the physical notch.
             if ui.expanded {
             ZStack(alignment: .top) {
-                PanelMaterial(glass: glass, tint: ui.showMedia ? np.accent : .white)
-                Color.black.opacity(glass ? 0.22 : 0.28)
-                if ui.showMedia, let art = np.artwork {
+                if settings.backdrop == .black && !glass {
+                    Color.black
+                } else {
+                    PanelMaterial(glass: glass, tint: ui.showMedia ? np.accent : .white, corner: 10 + 22 * CGFloat(settings.roundness))
+                    Color.black.opacity(glass ? 0.22 : 0.28)
+                }
+                if settings.backdrop == .aurora {
+                    Aurora(color: np.accent).opacity(0.6).transition(.opacity)
+                }
+                if settings.backdrop == .album, ui.showMedia, let art = np.artwork {
                     Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
                         .frame(width: open.width, height: total)
                         .blur(radius: 50)
@@ -5150,14 +5646,16 @@ struct NotchView: View {
             Color.black.opacity(ui.expanded ? 0 : 1)
 
             if ui.expanded {
-                expanded.transition(.asymmetric(insertion: contentInsertion(lifted: lifted),
+                glassGroup(glass) { expanded }.transition(.asymmetric(insertion: contentInsertion(lifted: lifted),
                                                 removal: .opacity.animation(.easeOut(duration: 0.12))))
             } else if extended {
                 collapsed.transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
         .modifier(NotchFrame(progress: ui.expanded ? 1 : 0, closed: closed, open: open, ooze: motion.ooze,
-                             scale: CGFloat(min(max(settings.notchScale, 0.85), Double(NotchState.maxScale))), glass: glass))
+                             scale: CGFloat(min(max(settings.notchScale, 0.85), Double(NotchState.maxScale))), glass: glass,
+                             roundness: CGFloat(settings.roundness), waiting: activities.waiting, sweep: ui.sweep, sweepColor: ui.sweepColor,
+                             effects: settings.eventEffects && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion))
         // A ring spreads out of the notch when something arrives (Fluid and Lively).
         .background(alignment: .top) {
             if motion.ripple && !ui.expanded {
@@ -5216,6 +5714,31 @@ struct NotchView: View {
             .animation(.spring(response: 0.4, dampingFraction: 0.8).delay(delay))
     }
 
+    /// Glass pieces close to each other are drawn as one sheet, and blend as they come and go.
+    @ViewBuilder private func glassGroup<Content: View>(_ glass: Bool, @ViewBuilder _ content: () -> Content) -> some View {
+        if glass, #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 14) { content() }
+        } else {
+            content()
+        }
+    }
+
+    /// One side of the closed notch while music plays.
+    @ViewBuilder private func closedSlot(_ slot: Settings.ClosedSlot) -> some View {
+        switch slot {
+        case .cover: Artwork(image: np.artwork, size: ui.notchH - 12)
+        case .wave: musicIndicator
+        case .clock:
+            TimelineView(.everyMinute) { ctx in
+                Text(ctx.date, format: .dateTime.hour().minute())
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundColor(.white.opacity(0.9))
+                    .fixedSize()
+            }
+        case .none: EmptyView()
+        }
+    }
+
     private var micShown: Bool { mic.shown }
 
     /// Left: what's running, else what's playing, else the Foco phase, else the shelf, else the mic.
@@ -5227,10 +5750,10 @@ struct NotchView: View {
         let activity = activities.items.first
         return HStack {
             if np.hasMedia {
-                Artwork(image: np.artwork, size: ui.notchH - 12)
-                    // Something is running too: a dot in its color on the cover.
+                closedSlot(settings.closedLeft)
+                    // Something finished: a dot in its color (what's running is on the right).
                     .overlay(alignment: .bottomTrailing) {
-                        if let activity {
+                        if let activity, activity.finished {
                             Circle().fill(activity.color).frame(width: 7, height: 7)
                                 .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
                                 .offset(x: 2, y: 2)
@@ -5261,8 +5784,11 @@ struct NotchView: View {
                 Image(systemName: "hand.raised.fill")
                     .font(.system(size: 12, weight: .bold)).foregroundColor(activity.color)
                     .symbolEffect(.bounce, value: activity.question)
+            } else if np.hasMedia, let activity, activity.state == .running {
+                ActivityBadge(item: activity, size: ui.notchH - 14)
+                    .transition(.scale.combined(with: .opacity))
             } else if np.hasMedia {
-                musicIndicator
+                closedSlot(settings.closedRight)
             } else if let activity {
                 ActivityClock(item: activity)
                 .font(.system(size: 12, weight: .semibold).monospacedDigit())
@@ -5737,10 +6263,29 @@ struct NotchView: View {
     }
 
     private var activitySection: some View {
-        VStack(spacing: 0) {
-            ForEach(activities.items.prefix(ui.activityRows)) { item in
+        let all = activities.items, rows = ui.activityRows
+        let extra = all.count - rows
+        // What's waiting always shows; the chip turns through the rest.
+        let start = extra > 0 ? activityPage.value % all.count : 0
+        let shown = extra > 0 ? (0..<rows).map { all[($0 + start) % all.count] } : Array(all.prefix(rows))
+        let visible = extra > 0 && all.contains(where: { $0.state == .waiting }) ? Array(all.prefix(rows)) : shown
+        return VStack(spacing: 0) {
+            ForEach(visible) { item in
                 ActivityRow(item: item, activities: activities)
                     .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if extra > 0 && !all.contains(where: { $0.state == .waiting }) {
+                Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { activityPage.value += rows } } label: {
+                    Text("+\(extra)").font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.white.opacity(0.14)))
+                        .padding(6).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .offset(x: 6, y: -6)
             }
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.8), value: activities.items)
@@ -6080,6 +6625,149 @@ struct MotionSettings: View {
 }
 
 /// How big the open notch is and how far the closed one sticks out.
+struct AgentPrefs: View {
+    @ObservedObject var settings = Settings.shared
+    @StateObject private var results = Box<[Agent: Bool?]>([:])
+    @StateObject private var checking = Box(false)
+    @StateObject private var rules = Box(TrustedCommands.all())
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(L("privateAgents"), isOn: $settings.privateAgents)
+                .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
+            Text(L("approveKeys")).font(.system(size: 10.5)).foregroundColor(.secondary)
+            HStack {
+                Button(L("verifyAgents")) { verify() }.controlSize(.small).disabled(checking.value)
+                if checking.value { ProgressView().controlSize(.small).scaleEffect(0.7) }
+                Spacer()
+            }
+            ForEach(Array(results.value.keys).sorted { $0.rawValue < $1.rawValue }) { agent in
+                let ok = results.value[agent] ?? nil
+                HStack(spacing: 6) {
+                    Image(systemName: ok == true ? "checkmark.circle.fill" : ok == false ? "xmark.circle.fill" : "minus.circle")
+                        .foregroundColor(ok == true ? .green : ok == false ? .red : .secondary)
+                    Text("\(agent.name): \(L(ok == true ? "agentOK" : ok == false ? "agentBroken" : "agentOff"))")
+                }
+                .font(.system(size: 11.5))
+            }
+            if !rules.value.isEmpty {
+                Text(L("alwaysAllowed")).font(.system(size: 12)).padding(.top, 2)
+                ForEach(rules.value) { rule in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(rule.command).font(.system(size: 11, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                            Text((rule.folder as NSString).abbreviatingWithTildeInPath).font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        Button(L("remove")) {
+                            rules.value.removeAll { $0 == rule }
+                            TrustedCommands.save(rules.value)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { rules.value = TrustedCommands.all() }
+    }
+
+    private func verify() {
+        checking.value = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            var found: [Agent: Bool?] = [:]
+            for agent in Agent.allCases { found[agent] = .some(AgentHooks.works(agent)) }
+            DispatchQueue.main.async {
+                results.value = found
+                checking.value = false
+            }
+        }
+    }
+}
+
+struct ThemeSettings: View {
+    @ObservedObject var settings = Settings.shared
+    private static let swatches = ["#FF5E57", "#FF9F0A", "#FFD60A", "#30D158", "#40C8E0", "#0A84FF", "#8A5CF6", "#FF2D92", "#FFFFFF"]
+
+    private var pick: Binding<Color> {
+        Binding(get: { settings.fixedAccent ?? .white }, set: { settings.accentHex = $0.hex })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("backdropTitle")).font(.system(size: 12))
+                Picker("", selection: $settings.backdrop) {
+                    ForEach(Settings.Backdrop.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden()
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("accentColor")).font(.system(size: 12))
+                Picker("", selection: Binding(get: { settings.accentHex != nil },
+                                              set: { settings.accentHex = $0 ? (settings.accentHex ?? "#8A5CF6") : nil })) {
+                    Text(L("accentAlbum")).tag(false)
+                    Text(L("accentFixed")).tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden()
+                if settings.accentHex != nil {
+                    HStack(spacing: 7) {
+                        ForEach(Self.swatches, id: \.self) { hex in
+                            let on = settings.accentHex == hex
+                            Button { settings.accentHex = hex } label: {
+                                Circle().fill(Color(hex: hex) ?? .white)
+                                    .frame(width: 20, height: 20)
+                                    .overlay(Circle().strokeBorder(Color.white.opacity(on ? 0.95 : 0.15), lineWidth: on ? 2 : 0.5))
+                                    .scaleEffect(on ? 1.12 : 1)
+                                    .animation(.spring(response: 0.25, dampingFraction: 0.65), value: on)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        ColorPicker("", selection: pick, supportsOpacity: false).labelsHidden().controlSize(.small)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: settings.accentHex != nil)
+            HStack {
+                Text(L("roundness")).font(.system(size: 12))
+                Slider(value: $settings.roundness, in: 0.4...1.5)
+            }
+            Toggle(L("eventEffects"), isOn: $settings.eventEffects)
+                .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
+            HStack {
+                Spacer()
+                Button(L("tryIt")) { NotificationCenter.default.post(name: Settings.previewRequested, object: nil) }
+                    .controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct ClosedLayoutSettings: View {
+    @ObservedObject var settings = Settings.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            row(L("closedLeft"), $settings.closedLeft)
+            row(L("closedRight"), $settings.closedRight)
+            Text(L("closedHint")).font(.system(size: 10.5)).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private func row(_ title: String, _ value: Binding<Settings.ClosedSlot>) -> some View {
+        HStack {
+            Text(title).font(.system(size: 12))
+            Spacer()
+            Picker("", selection: value) {
+                ForEach(Settings.ClosedSlot.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden().frame(width: 270)
+        }
+    }
+}
+
 struct SizeSettings: View {
     @ObservedObject var settings = Settings.shared
     var body: some View {
@@ -6480,6 +7168,8 @@ struct SettingsView: View {
                 }
             case .appearance:
                 glassSection("") { StylePicker() }
+                glassSection(L("theme")) { ThemeSettings() }
+                glassSection(L("closedLayout")) { ClosedLayoutSettings() }
             case .motion:
                 glassSection(L("motion")) { MotionSettings() }
                 glassSection(L("size")) { SizeSettings() }
@@ -6492,6 +7182,9 @@ struct SettingsView: View {
                     .padding(.horizontal, 4)
                 if settings.lidPauseEnabled, let lid {
                     glassSection(L("addonLid")) { LidSettings(lid: lid) }
+                }
+                if settings.activitiesEnabled {
+                    glassSection(L("agentPrefs")) { AgentPrefs() }
                 }
                 glassSection(L("terminalActivities")) { ActivitiesHelp() }
             case .permissions:
@@ -6958,7 +7651,9 @@ final class NotchController {
         let rows = fileDrag ? 0 : min(activities.items.count, NotchState.maxActivities)
         if ui.activityRows != rows { ui.activityRows = rows }
         // A clock on the right: Foco's countdown, or how long the activity has been going.
-        let timerShown = foco.session != nil || (!np.hasMedia && !activities.items.isEmpty && !activities.waiting)
+        let settings = Settings.shared
+        let clockShown = np.hasMedia && (settings.closedLeft == .clock || settings.closedRight == .clock)
+        let timerShown = foco.session != nil || clockShown || (!np.hasMedia && !activities.items.isEmpty && !activities.waiting)
         if ui.timerShown != timerShown { ui.timerShown = timerShown }
         let scale = CGFloat(min(max(Settings.shared.notchScale, 0.85), Double(NotchState.maxScale)))
         if ui.scale != scale { ui.scale = scale }
@@ -7037,6 +7732,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let micToggleRequested = Notification.Name("NotchUser.micToggleRequested")
     private var ocrHotKey: HotKey?
     private var micHotKey: HotKey?
+    /// Only there while a command waits, so nothing else loses these keys.
+    private var approveKeys: [HotKey] = []
+    private var waitingWatch: AnyCancellable?
     /// What lowering the lid did, so raising it undoes exactly that.
     private var lidPausedMusic = false
     private var lidMutedMic = false
@@ -7046,6 +7744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var idleDragCount = NSPasteboard(name: .drag).changeCount
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        AppLocation.offerMove()
         rebuild()
         for name in [NSApplication.didChangeScreenParametersNotification, Settings.screensChanged] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.rebuild() }
@@ -7081,7 +7780,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 Haptics.play(.tap)
             }
-            self.controllers.forEach { $0.bump(failed ? .red : .green) }
+            self.controllers.forEach {
+                $0.bump(failed ? .red : .green)
+                $0.ui.sweepColor = failed ? .red : .green
+                $0.ui.sweep += 1
+            }
             // An agent's result card stays long enough to read.
             self.peek(done.contains { $0.agent != nil && $0.summary != nil } ? 8 : 3)
         }
@@ -7094,6 +7797,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: Settings.activitiesChanged, object: nil, queue: .main) { [weak self] _ in
             self?.activities.update()
         }
+        waitingWatch = activities.$items
+            .map { $0.contains { $0.state == .waiting && !$0.isChoice } }
+            .removeDuplicates()
+            .sink { [weak self] waiting in
+                guard let self else { return }
+                self.approveKeys = !waiting ? [] : [
+                    HotKey(keyCode: kVK_Return, modifiers: controlKey | optionKey) { [weak self] in self?.answerByKey("allow") },
+                    HotKey(keyCode: kVK_Delete, modifiers: controlKey | optionKey) { [weak self] in self?.answerByKey("deny") },
+                ]
+            }
         Updates.shared.start()
         NotificationCenter.default.addObserver(forName: Settings.updatesChanged, object: nil, queue: .main) { _ in Updates.shared.start() }
         setUpAddOns()
@@ -7185,6 +7898,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
             log.notice("screen access at launch: ScreenCaptureKit \(error == nil && content != nil ? "ok" : "denied: \(error?.localizedDescription ?? "-")", privacy: .public)")
         }
+    }
+
+    /// ⌃⌥↩ and ⌃⌥⌫ answer the oldest request, once it has been on screen for a moment.
+    private func answerByKey(_ reply: String) {
+        guard let a = activities.items.first(where: { $0.state == .waiting && !$0.isChoice }),
+              Date().timeIntervalSince(a.updated ?? .distantPast) >= a.armDelay else { return }
+        activities.answer(a, reply)
+        Haptics.play(.tap)
     }
 
     private func updateOCRHotKey() {
@@ -7287,7 +8008,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard url.scheme == "notchuser", let action = url.host else { return }
         var q: [String: String] = [:]
         for item in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] {
-            if let v = item.value, !v.isEmpty { q[item.name] = v }
+            if let v = item.value, !v.isEmpty { q[item.name] = String(v.prefix(200)) }
         }
         let id = q["id"] ?? "default"
         let ok = q["ok"].map { $0 == "1" || $0 == "true" || $0 == "ok" } ?? true
@@ -7300,6 +8021,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "start", "progress", "done":
             // Into the same folder as everything else, so they list, expire and alert like the rest.
             let fileID = "notch-" + id
+            // A link can come from any web page, so it can't fill the folder.
+            let links = (try? FileManager.default.contentsOfDirectory(atPath: ActivityFiles.dir.path))?.filter { $0.hasPrefix("notch-") }.count ?? 0
+            if links >= 20 && ActivityFiles.read(fileID) == nil { return }
             var a = ActivityFiles.read(fileID) ?? Activity(id: fileID, title: q["title"] ?? id, state: .running, started: Date())
             a.id = fileID
             if let v = q["title"] { a.title = v }

@@ -46,6 +46,16 @@ The notch is dead space in the middle of your menu bar. NotchUser turns it into 
 - **A shelf for everything in transit.** Drop files, links or text on it, drag them out wherever they go.
 - **Light enough to forget.** About **0.1% CPU and 30–50 MB** with music playing. The animations run in Core Animation, inside macOS.
 
+## New in 1.8
+
+- **Make it yours.** Album, pure black or a slow Aurora behind the notch. A highlight color that follows the album or stays the one you pick. Choose what the closed notch shows on each side (cover, waves, clock) and how round its corners are.
+- **Light that means something.** An amber glow while something waits for you, and a light that runs around the notch when it finishes.
+- **Safer approvals.** Each request gets its own answer, buttons wake up after a moment so a stray click can't allow anything, risky commands turn red, and long commands roll by so you can read them.
+- **Faster approvals.** ⌃⌥↩ allows and ⌃⌥⌫ denies. Always allow an exact command in a folder, and remove it whenever you like.
+- **One-click updates.** The notch downloads the new version, checks it and reopens. With Homebrew, it points you to `brew upgrade`.
+- **Agents that keep working.** Connections survive moving the app, **Check agents** tests and repairs them, and private mode keeps your prompts off the screen.
+- **More builds found.** Your own `build.sh`, `swiftc`, `tsc`, `vite build`, `jest`, `dotnet`, `flutter` and more. `notch run` shows why a command failed.
+
 ## New in 1.7
 
 When Claude Code or Codex finishes, the notch opens with its logo, what you asked and a short summary of what it did. One click takes you back to the app.
@@ -119,8 +129,8 @@ Requires **macOS 14 Sonoma or later**, Apple Silicon or Intel.
 ## Privacy
 
 - **No account, no analytics, no tracking.**
-- Network requests: the Spotify cover art (from Spotify); once a day, the latest version number from GitHub, to tell you when an update is out (turn it off in **Settings → General**); and, only if you turn lyrics on and open them, the song's title, artist and length to [LRCLIB](https://lrclib.net), a free lyrics database.
-- Agents and activities stay on your Mac: they talk to the notch through local files. Connecting an agent only adds NotchUser's hooks to its settings, after a backup.
+- Network requests: the Spotify cover art (from Spotify); once a day, the latest version number from GitHub, to tell you when an update is out (turn it off in **Settings → General**), and the new version itself from GitHub if you click to install it; and, only if you turn lyrics on and open them, the song's title, artist and length to [LRCLIB](https://lrclib.net), a free lyrics database.
+- Agents and activities stay on your Mac: they talk to the notch through local files. Connecting an agent only adds NotchUser's hooks to its settings, after a backup. Private mode keeps your prompts and the agents' answers out of the notch.
 - Text recognition runs on your Mac and the image is deleted right away. Every permission is asked only by the feature that needs it.
 
 ## Performance
