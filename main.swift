@@ -1102,11 +1102,12 @@ struct Activity: Codable, Equatable, Identifiable {
     var app: String?         // bundle ID brought forward on click
     var open: String?        // URL or path opened on click (wins over app)
     var pid: Int32?          // the activity goes away if this process dies
+    var trust: Bool?         // a plain shell command, shown exactly as it runs: "always" may apply
     var started: Date?
     var updated: Date?
 
     private enum CodingKeys: String, CodingKey {
-        case title, detail, state, progress, question, options, multi, header, step, summary, icon, app, open, pid, started, updated
+        case title, detail, state, progress, question, options, multi, header, step, summary, icon, app, open, pid, trust, started, updated
     }
 
     /// Commands worth a second look before they're allowed. Never trusted automatically.
@@ -1116,7 +1117,7 @@ struct Activity: Codable, Equatable, Identifiable {
     }
     var risky: Bool { state == .waiting && Activity.isRisky(question ?? "") }
     /// Exactly this command can be allowed from now on (not risky, and not cut short).
-    var trustable: Bool { agent != nil && !risky && !isChoice && question?.hasSuffix("…") == false }
+    var trustable: Bool { agent != nil && trust == true && !risky && !isChoice && question?.hasSuffix("…") == false }
     /// How long the buttons sleep after a request appears.
     var armDelay: TimeInterval { risky ? 1.5 : 0.6 }
 
@@ -1309,6 +1310,8 @@ final class Activities: ObservableObject {
 
     /// "allow", "deny" or "ask" (answer in the terminal instead).
     func answer(_ a: Activity, _ reply: String) {
+        // Already answered (a double click): the hook took its reply and removed the request.
+        guard FileManager.default.fileExists(atPath: ActivityFiles.url(a.id).path) else { return }
         try? reply.write(to: ActivityFiles.url(a.id, "reply"), atomically: true, encoding: .utf8)
         onAnswered?()
     }
@@ -1356,13 +1359,17 @@ final class Updates {
     private(set) var available: (version: String, page: URL, asset: URL?, digest: String?)?
     private var timer: Timer?
     private var installing = false
+    private var firstCheck: DispatchWorkItem?
 
     func start() {
         timer?.invalidate()
         timer = nil
+        firstCheck?.cancel()
         guard Settings.shared.checkUpdates else { available = nil; return }
         // Not right at login, when everything else is starting too.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.check() }
+        let first = DispatchWorkItem { [weak self] in self?.check() }
+        firstCheck = first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: first)
         timer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in self?.check() }
         timer?.tolerance = 3600
     }
@@ -1451,12 +1458,8 @@ final class Updates {
                     if let old = trashed as URL? { try? fm.moveItem(at: old, to: target) }
                     throw error
                 }
-                let again = Process()
-                again.executableURL = URL(fileURLWithPath: "/bin/sh")
-                again.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", target.path]
-                try again.run()
                 ActivityFiles.remove(id)
-                DispatchQueue.main.async { NSApp.terminate(nil) }
+                AppLocation.relaunch(target)
             } catch {
                 DispatchQueue.main.async {
                     self.installing = false
@@ -1482,6 +1485,15 @@ final class Updates {
 /// Opened from Downloads, macOS runs a temporary copy that disappears (and can't start at login):
 /// offer to move the app where it belongs.
 enum AppLocation {
+    /// Opens `app` once this process is gone (opening it earlier would just bring this one forward), then quits.
+    static func relaunch(_ app: URL) {
+        let again = Process()
+        again.executableURL = URL(fileURLWithPath: "/bin/sh")
+        again.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"", app.path, String(getpid())]
+        try? again.run()
+        DispatchQueue.main.async { NSApp.terminate(nil) }
+    }
+
     static var misplaced: Bool {
         let path = Bundle.main.bundlePath
         let downloads = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads").path
@@ -1510,8 +1522,17 @@ enum AppLocation {
             let fm = FileManager.default
             let target = URL(fileURLWithPath: "/Applications/NotchUser.app")
             let source = original ?? Bundle.main.bundleURL
-            if fm.fileExists(atPath: target.path) { try fm.trashItem(at: target, resultingItemURL: nil) }
-            try fm.copyItem(at: Bundle.main.bundleURL, to: target)
+            // Copy next to it first: a copy that fails (disk full) leaves the old one where it was.
+            let staged = URL(fileURLWithPath: "/Applications/.NotchUser-new.app")
+            try? fm.removeItem(at: staged)
+            try fm.copyItem(at: Bundle.main.bundleURL, to: staged)
+            var trashed: NSURL?
+            if fm.fileExists(atPath: target.path) { try fm.trashItem(at: target, resultingItemURL: &trashed) }
+            do { try fm.moveItem(at: staged, to: target) } catch {
+                if let old = trashed as URL? { try? fm.moveItem(at: old, to: target) }
+                try? fm.removeItem(at: staged)
+                throw error
+            }
             // The first launch was already approved; without this macOS would make another temporary copy.
             let clear = Process()
             clear.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
@@ -1519,11 +1540,7 @@ enum AppLocation {
             try clear.run()
             clear.waitUntilExit()
             if source != target { try? fm.trashItem(at: source, resultingItemURL: nil) }
-            let again = Process()
-            again.executableURL = URL(fileURLWithPath: "/bin/sh")
-            again.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", target.path]
-            try again.run()
-            NSApp.terminate(nil)
+            relaunch(target)
         } catch {
             let failed = NSAlert(error: error)
             failed.runModal()
@@ -1807,12 +1824,17 @@ enum CLI {
             let command = describe(tool: tool, input: args)
             let cwd = j["cwd"] as? String ?? ""
             request.question = command
+            // Only a shell command can be trusted, and only when what's shown is exactly what runs:
+            // file edits and other tools would let any content or argument through under one rule.
+            let raw = args["command"] as? String
+            let canTrust = raw != nil && !tool.hasPrefix("mcp") && command == "\(tool): \(raw!)"
+            request.trust = canTrust
             var reply = "allow"
-            if !TrustedCommands.allows(folder: cwd, command: command) {
+            if !(canTrust && TrustedCommands.allows(folder: cwd, command: command)) {
                 // The agent waits up to the hook's timeout (600 s); answer a little before that.
                 guard let answer = waitForAnswer(request, timeout: 590, ownFile: true), ["allow", "deny", "always"].contains(answer) else { return 0 }
                 reply = answer == "deny" ? "deny" : "allow"
-                if answer == "always", !Activity.isRisky(command), !command.hasSuffix("…") { TrustedCommands.add(folder: cwd, command: command) }
+                if answer == "always", canTrust, !Activity.isRisky(command), !command.hasSuffix("…") { TrustedCommands.add(folder: cwd, command: command) }
             }
             var decision: [String: Any] = ["behavior": reply]
             if reply == "deny" { decision["message"] = "The user denied this from the notch (NotchUser)." }
@@ -2214,7 +2236,10 @@ enum AgentHooks {
 
     /// At every launch: the script learns where the app is now, and an agent connected by an earlier
     /// version (fewer hooks, or a path to the app that may be gone) is brought up to date.
+    private static let upgrading = NSLock()
     static func upgrade() {
+        // Launch and Verify can both get here at once: one rewrite of the agents' files at a time.
+        upgrading.lock(); defer { upgrading.unlock() }
         writeScript()
         for agent in Agent.allCases {
             let url = configURL(agent)
@@ -2290,7 +2315,8 @@ enum AgentHooks {
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         guard (try? p.run()) != nil else { return false }
-        input.fileHandleForWriting.write(Data("{}".utf8))
+        // The script may exit without reading (no app at app-path): don't let EPIPE raise.
+        try? input.fileHandleForWriting.write(contentsOf: Data("{}".utf8))
         try? input.fileHandleForWriting.close()
         p.waitUntilExit()
         return p.terminationStatus == 0 && FileManager.default.isExecutableFile(atPath: binary)
@@ -3065,13 +3091,28 @@ final class MicMonitor: ObservableObject {
 
 /// The hinge sensor in recent MacBooks: an HID device Apple doesn't document, which reports
 /// the lid angle in degrees. Read twice a second, only while something needs it.
+/// NSScreen.screens builds new objects on every call; the hover loop asks 30 times a second.
+enum ScreenList {
+    private static var cached: [NSScreen]?
+    private static let observer: NSObjectProtocol = NotificationCenter.default.addObserver(
+        forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in cached = nil }
+    static func reset() { cached = nil }
+    static var all: [NSScreen] {
+        _ = observer
+        if let cached { return cached }
+        let list = NSScreen.screens
+        cached = list
+        return list
+    }
+}
+
 final class LidSensor: ObservableObject {
     @Published private(set) var angle: Double?
     @Published private(set) var available = true
     var onLowered: (() -> Void)?
     var onRaised: (() -> Void)?
     /// Settings shows the live angle while its pane is open.
-    var watching = false { didSet { update() } }
+    var watching = false { didSet { if watching != oldValue { timer?.invalidate(); timer = nil }; update() } }
     private var manager: IOHIDManager?
     private var device: IOHIDDevice?
     private var missing = false
@@ -3083,8 +3124,9 @@ final class LidSensor: ObservableObject {
         if wanted && timer == nil {
             tick()
             guard !missing else { return }
-            let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
-            t.tolerance = 0.15
+            // Twice a second only while Settings shows the live angle; a lid takes longer than 1 s to close.
+            let t = Timer(timeInterval: watching ? 0.5 : 1, repeats: true) { [weak self] _ in self?.tick() }
+            t.tolerance = watching ? 0.15 : 0.3
             RunLoop.main.add(t, forMode: .common)
             timer = t
         } else if !wanted, let t = timer {
@@ -6664,7 +6706,7 @@ struct AgentPrefs: View {
                         }
                         Spacer()
                         Button(L("remove")) {
-                            rules.value.removeAll { $0 == rule }
+                            rules.value = TrustedCommands.all().filter { $0 != rule }
                             TrustedCommands.save(rules.value)
                         }
                         .controlSize(.small)
@@ -7542,7 +7584,7 @@ final class NotchController {
         }
     }
 
-    var screen: NSScreen? { NSScreen.screens.first { $0.displayID == displayID } }
+    var screen: NSScreen? { ScreenList.all.first { $0.displayID == displayID } }
 
     func layout(_ s: NSScreen) {
         if s.hasNotch, let l = s.auxiliaryTopLeftArea, let r = s.auxiliaryTopRightArea {
@@ -7625,9 +7667,12 @@ final class NotchController {
     }
 
     /// Whether this notch needs the fast hover loop: it is open, peeking, or the mouse is close.
+    private var lastRect: NSRect?
     func isHot(_ mouse: NSPoint) -> Bool {
         guard let s = screen else { return false }
-        let zone = NSRect(x: s.frame.midX - 420, y: s.frame.maxY - 260, width: 840, height: 260)
+        // Just past the reach of magnetism (110 pt): the browser's tabs below it stay in the slow loop.
+        let zone = lastRect.map { $0.insetBy(dx: -140, dy: -140) }
+            ?? NSRect(x: s.frame.midX - 420, y: s.frame.maxY - 260, width: 840, height: 260)
         return ui.expanded || Date() < peekUntil || Date() < previewUntil || Date() < levelUntil || zone.contains(mouse)
     }
 
@@ -7668,6 +7713,7 @@ final class NotchController {
         if ui.expanded { sz = CGSize(width: sz.width * scale, height: sz.height * scale) }
         let rect = NSRect(x: s.frame.midX - sz.width / 2, y: s.frame.maxY - sz.height, width: sz.width, height: sz.height)
             .insetBy(dx: -2, dy: -2)
+        lastRect = rect
         let mouse = NSEvent.mouseLocation
         // Open, it keeps a little slack below and beside it: reaching for the dots on its bottom edge
         // (or overshooting a button) isn't leaving.
@@ -7882,6 +7928,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Keeps one controller per display that should show the notch.
     func rebuild() {
+        ScreenList.reset()
         let screens = NSScreen.screens.filter { $0.hasNotch || Settings.shared.showOnAllScreens }
         controllers.removeAll { c in
             guard !screens.contains(where: { $0.displayID == c.displayID }) else { return false }
@@ -7906,7 +7953,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// ⌃⌥↩ and ⌃⌥⌫ answer the oldest request, once it has been on screen for a moment.
     private func answerByKey(_ reply: String) {
-        guard let a = activities.items.first(where: { $0.state == .waiting && !$0.isChoice }),
+        // Only what's on screen: a request hidden behind others is never answered blind.
+        guard let a = activities.items.prefix(NotchState.maxActivities).first(where: { $0.state == .waiting && !$0.isChoice }),
               Date().timeIntervalSince(a.updated ?? .distantPast) >= a.armDelay else { return }
         activities.answer(a, reply)
         Haptics.play(.tap)
