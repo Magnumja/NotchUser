@@ -3897,7 +3897,7 @@ struct NotchFrame: ViewModifier, Animatable {
                     .opacity(t))
             .overlay {
                 if effects {
-                    if waiting { WaitingGlow(shape: shape).transition(.opacity) }
+                    WaitingGlow(shape: shape, on: waiting)
                     EventSweep(shape: shape, trigger: sweep, color: sweepColor)
                 }
             }
@@ -3949,18 +3949,22 @@ struct EventSweep: View {
     }
 }
 
-/// An amber breath around the notch while something waits for an answer.
+/// An amber breath around the notch while something waits for an answer. It stays in place and
+/// only fades, so it moves with the notch at the notch's own speed, closing included (a view that
+/// is removed or wrapped in its own animation keeps its old outline while it goes).
 struct WaitingGlow: View {
     var shape: NotchShape
+    var on: Bool
 
     var body: some View {
         ZStack {
             shape.stroke(Color.orange, lineWidth: 5).blur(radius: 4)
             shape.stroke(Color.orange, lineWidth: 1.5)
         }
-        .phaseAnimator([false, true]) { view, bright in
-            view.opacity(bright ? 1 : 0.25)
-        } animation: { _ in .easeInOut(duration: 0.9) }
+        // Only the opacity breathes; the outline follows the notch.
+        .animation(on ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .easeOut(duration: 0.15)) {
+            $0.opacity(on ? 1 : 0)
+        }
         .allowsHitTesting(false)
     }
 }
