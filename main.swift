@@ -12,6 +12,7 @@ import os
 import ScreenCaptureKit
 import AudioToolbox
 import IOKit.hid
+import IOKit.ps
 import CoreImage
 import ImageIO
 import CryptoKit
@@ -136,6 +137,22 @@ final class Settings: ObservableObject {
         }
     }
     static let micChanged = Notification.Name("NotchUser.micSettingChanged")
+    /// A short note in the notch when the charger goes in or out, and when the battery runs low.
+    @Published var batteryEnabled: Bool {
+        didSet {
+            d.set(batteryEnabled, forKey: "batteryEnabled")
+            NotificationCenter.default.post(name: Self.batteryChanged, object: nil)
+        }
+    }
+    static let batteryChanged = Notification.Name("NotchUser.batterySettingChanged")
+    /// ⌃⌥N opens the notch from the keyboard (and closes it again).
+    @Published var openKeyEnabled: Bool {
+        didSet {
+            d.set(openKeyEnabled, forKey: "openKeyEnabled")
+            NotificationCenter.default.post(name: Self.openKeyChanged, object: nil)
+        }
+    }
+    static let openKeyChanged = Notification.Name("NotchUser.openKeySettingChanged")
     /// Pause the music (and mute the mic) when the lid is lowered.
     @Published var lidPauseEnabled: Bool {
         didSet {
@@ -209,6 +226,8 @@ final class Settings: ObservableObject {
         sideScale = d.object(forKey: "sideScale") as? Double ?? 1
         gesturesEnabled = d.bool(forKey: "gesturesEnabled")
         micEnabled = d.bool(forKey: "micEnabled")
+        batteryEnabled = d.object(forKey: "batteryEnabled") as? Bool ?? true
+        openKeyEnabled = d.bool(forKey: "openKeyEnabled")
         lidPauseEnabled = d.bool(forKey: "lidPauseEnabled")
         lidThreshold = d.object(forKey: "lidThreshold") as? Double ?? 40
         hapticsEnabled = d.object(forKey: "hapticsEnabled") as? Bool ?? true
@@ -268,6 +287,24 @@ enum Strings {
         "alreadyOnShelf": ["en": "%ld already on the shelf", "pt": "%ld já na prateleira", "es": "%ld ya en el estante"],
         "clearShelf": ["en": "Clear shelf", "pt": "Limpar prateleira", "es": "Vaciar estante"],
         "removeSelected": ["en": "Remove the %ld selected", "pt": "Tirar os %ld selecionados", "es": "Quitar los %ld seleccionados"],
+        "planProgress": ["en": "%ld of %ld", "pt": "%ld de %ld", "es": "%ld de %ld"],
+        "seePlan": ["en": "See the plan", "pt": "Ver o plano", "es": "Ver el plan"],
+        "timer": ["en": "Timer", "pt": "Timer", "es": "Temporizador"],
+        "timerMinutes": ["en": "%ld minutes", "pt": "%ld minutos", "es": "%ld minutos"],
+        "timerCancel": ["en": "Cancel the timer", "pt": "Cancelar o timer", "es": "Cancelar el temporizador"],
+        "timerDone": ["en": "Time's up", "pt": "Tempo esgotado", "es": "Se acabó el tiempo"],
+        "batteryCharging": ["en": "Charging", "pt": "Carregando", "es": "Cargando"],
+        "batteryUnplugged": ["en": "On battery", "pt": "Na bateria", "es": "Con batería"],
+        "batteryLow": ["en": "Battery low", "pt": "Bateria fraca", "es": "Batería baja"],
+        "batteryFull": ["en": "Fully charged", "pt": "Bateria carregada", "es": "Batería cargada"],
+        "addonBattery": ["en": "Battery and charger notes", "pt": "Avisos de bateria e carregador", "es": "Avisos de batería y cargador"],
+        "addonBatteryHint": ["en": "A short note when the charger goes in or out, at 20% and 10%, and when it's full.",
+                             "pt": "Um aviso curto ao plugar ou desplugar o carregador, em 20% e 10%, e quando carrega tudo.",
+                             "es": "Un aviso corto al conectar o quitar el cargador, al 20 % y 10 %, y cuando está llena."],
+        "addonOpenKey": ["en": "Open the notch from the keyboard (⌃⌥N)", "pt": "Abrir o notch pelo teclado (⌃⌥N)", "es": "Abrir el notch con el teclado (⌃⌥N)"],
+        "addonOpenKeyHint": ["en": "⌃⌥N opens the notch without the mouse; press it again to close.",
+                             "pt": "⌃⌥N abre o notch sem o mouse; aperte de novo para fechar.",
+                             "es": "⌃⌥N abre el notch sin el ratón; púlsalo de nuevo para cerrar."],
         "break": ["en": "Break", "pt": "Pausa", "es": "Descanso"],
         "focusCycle": ["en": "Focus · cycle %ld of %ld", "pt": "Foco · ciclo %ld de %ld", "es": "Enfoque · ciclo %ld de %ld"],
         "openFoco": ["en": "Open Foco", "pt": "Abrir o Foco", "es": "Abrir Foco"],
@@ -668,9 +705,23 @@ final class NowPlaying: ObservableObject {
     func start() {
         _ = startHelper()
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
+        // Spotify and Music say when they play, pause or change song, so a paused player only
+        // needs a look now and then (it may have been closed).
+        for name in ["com.spotify.client.PlaybackStateChanged", "com.apple.Music.playerInfo"] {
+            DistributedNotificationCenter.default().addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] _ in
+                self?.refresh()
+            }
+        }
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.quietTicks = self.scriptedPlaying ? 0 : self.quietTicks + 1
+            if self.scriptedPlaying || self.quietTicks % 5 == 0 { self.refresh() }
+        }
         timer?.tolerance = 0.5
     }
+    /// Whether a player followed by AppleScript was playing at the last look.
+    private var scriptedPlaying = true
+    private var quietTicks = 0
 
     func currentPosition(at date: Date) -> Double {
         guard let c = current, c.duration > 0 else { return 0 }
@@ -709,7 +760,7 @@ final class NowPlaying: ObservableObject {
         if newTrack && hadTrack && id == selectedID { onTrackChange?() }
     }
 
-    private func setArtwork(_ id: String, _ img: NSImage?) {
+    private func setArtwork(_ id: String, _ img: NSImage?, accent: Color? = nil) {
         guard let s = sources[id] else { return }
         guard let img else {
             // Players report a new song first and its cover a moment later. Clearing right away
@@ -724,7 +775,13 @@ final class NowPlaying: ObservableObject {
             return
         }
         sources[id]?.artwork = img
-        sources[id]?.accent = averageColor(img)
+        sources[id]?.accent = accent ?? averageColor(img)
+    }
+
+    /// Decoding a cover and finding its color takes a few milliseconds: not on the main thread.
+    private static func decode(_ data: Data?) -> (image: NSImage, accent: Color)? {
+        guard let data, let img = NSImage(data: data) else { return nil }
+        return (img, averageColor(img))
     }
 
     private func remove(_ id: String) {
@@ -841,7 +898,19 @@ final class NowPlaying: ObservableObject {
                playing: o["playing"] as? Bool ?? false)
         // Only present when the artwork changed.
         if let b64 = o["artwork"] as? String {
-            setArtwork(id, Data(base64Encoded: b64).flatMap(NSImage.init(data:)))
+            if b64.isEmpty {
+                setArtwork(id, nil)
+            } else {
+                let track = t + "|" + (o["artist"] as? String ?? "")
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let art = Self.decode(Data(base64Encoded: b64))
+                    DispatchQueue.main.async { [weak self] in
+                        // Skipped ahead meanwhile: this cover belongs to a song that's gone.
+                        guard let self, let now = self.sources[id], now.title + "|" + now.artist == track else { return }
+                        self.setArtwork(id, art?.image, accent: art?.accent)
+                    }
+                }
+            }
         }
         reselect()
     }
@@ -909,6 +978,7 @@ final class NowPlaying: ObservableObject {
     private func num(_ s: String) -> Double { Double(s.replacingOccurrences(of: ",", with: ".")) ?? 0 }
 
     private func applyScripts(_ results: [(Player, [String]?)]) {
+        scriptedPlaying = results.contains { $0.1?[4] == "playing" }
         for (p, f) in results {
             let id = p.bundleID
             guard let f else {
@@ -942,18 +1012,19 @@ final class NowPlaying: ObservableObject {
     }
 
     private func loadArtwork(_ p: Player, url: String, trackKey: String) {
-        let done: (NSImage?) -> Void = { img in
+        let done: (Data?) -> Void = { data in
+            let art = Self.decode(data)
             DispatchQueue.main.async {
-                guard let img, let s = self.sources[p.bundleID], s.title + "|" + s.artist == trackKey else { return }
-                self.setArtwork(p.bundleID, img)
+                guard let art, let s = self.sources[p.bundleID], s.title + "|" + s.artist == trackKey else { return }
+                self.setArtwork(p.bundleID, art.image, accent: art.accent)
             }
         }
         if p == .spotify, let u = URL(string: url), u.scheme == "https" {
-            URLSession.shared.dataTask(with: u) { data, _, _ in done(data.flatMap(NSImage.init(data:))) }.resume()
+            URLSession.shared.dataTask(with: u) { data, _, _ in done(data) }.resume()
         } else if p == .music {
             queue.async { [self] in
                 let d = run("tell application \"Music\" to get raw data of artwork 1 of current track")?.data
-                done(d.flatMap(NSImage.init(data:)))
+                done(d)
             }
         }
     }
@@ -1019,7 +1090,7 @@ func averageColor(_ img: NSImage) -> Color {
 /// Mirrors the session the Foco app saves in its own preferences, so its timer
 /// shows in the notch without Foco having to know about NotchUser.
 final class FocoTimer: ObservableObject {
-    struct Session: Decodable, Equatable {
+    struct Session: Codable, Equatable {
         var intention: String
         var cycle: Int
         var totalCycles: Int
@@ -1033,7 +1104,51 @@ final class FocoTimer: ObservableObject {
     var onPhaseChange: (() -> Void)?
     private var timer: Timer?
 
+    // A countdown of the notch's own (the menu, `notch timer 25m`): no other app needed.
+    static weak var current: FocoTimer?
+    static let presets = [5, 10, 15, 25, 45, 60]
+    private(set) var own: Session?
+    private var ownEnd: Timer?
+    /// The countdown reached zero (not cancelled); with its label.
+    var onFinished: ((String) -> Void)?
+    var isOwn: Bool { own != nil && session == own }
+
+    func startOwn(seconds: TimeInterval, label: String = "") {
+        let length = min(max(seconds, 1), 24 * 3600)
+        own = Session(intention: String(label.prefix(60)), cycle: 1, totalCycles: 1, isBreak: false,
+                      phaseStart: Date(), phaseEnd: Date().addingTimeInterval(length))
+        saveOwn()
+        refresh()
+    }
+
+    func stopOwn() {
+        guard own != nil else { return }
+        own = nil
+        saveOwn()
+        refresh()
+    }
+
+    private func saveOwn() {
+        ownEnd?.invalidate()
+        ownEnd = nil
+        let d = UserDefaults.standard
+        guard let own else { d.removeObject(forKey: "ownTimer"); return }
+        d.set(try? JSONEncoder().encode(own), forKey: "ownTimer")
+        // The end is a moment in time, so sleeping through it still ends it on waking.
+        let t = Timer(fire: own.phaseEnd, interval: 0, repeats: false) { [weak self] _ in self?.refresh() }
+        t.tolerance = 0.1
+        RunLoop.main.add(t, forMode: .common)
+        ownEnd = t
+    }
+
     func start() {
+        Self.current = self
+        // A countdown survives restarting the app.
+        if let data = UserDefaults.standard.data(forKey: "ownTimer"), let saved = try? JSONDecoder().decode(Session.self, from: data) {
+            // One that ended while the app was closed has nothing left to say.
+            own = saved.phaseEnd > Date() ? saved : nil
+            saveOwn()
+        }
         refresh()
         // Without Foco installed there is nothing to follow; check rarely in case it gets installed.
         let interval: TimeInterval = appURL(Self.bundleID) != nil ? 2 : 60
@@ -1048,7 +1163,12 @@ final class FocoTimer: ObservableObject {
         // A session left behind by a Foco that is no longer running is stale.
         let running = !NSRunningApplication.runningApplications(withBundleIdentifier: Self.bundleID).isEmpty
             && Settings.shared.showFoco
-        let new = running ? data.flatMap { try? JSONDecoder().decode(Session.self, from: $0) } : nil
+        if let o = own, o.phaseEnd <= Date() {
+            own = nil
+            saveOwn()
+            onFinished?(o.intention)
+        }
+        let new = own ?? (running ? data.flatMap { try? JSONDecoder().decode(Session.self, from: $0) } : nil)
         guard new != session else { return }
         let phaseChanged = session != nil && new != nil && new?.isBreak != session?.isBreak
         session = new
@@ -1064,9 +1184,10 @@ final class FocoTimer: ObservableObject {
     }
 
     var color: Color { session?.isBreak == true ? .green : .orange }
+    var symbol: String { isOwn ? "timer" : session?.isBreak == true ? "cup.and.saucer.fill" : "scope" }
 
     func open() {
-        guard let url = appURL(Self.bundleID) else { return }
+        guard !isOwn, let url = appURL(Self.bundleID) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: .init())
     }
 
@@ -1103,11 +1224,19 @@ struct Activity: Codable, Equatable, Identifiable {
     var open: String?        // URL or path opened on click (wins over app)
     var pid: Int32?          // the activity goes away if this process dies
     var trust: Bool?         // a plain shell command, shown exactly as it runs: "always" may apply
+    /// The agent's own to-do list, as it keeps it: what's done, what it's on, what's left.
+    struct Step: Codable, Equatable, Hashable {
+        var id: String?
+        var text: String
+        var doing: String?   // "Running the tests", while it's the current one
+        var state: String    // pending, active or done
+    }
+    var steps: [Step]?
     var started: Date?
     var updated: Date?
 
     private enum CodingKeys: String, CodingKey {
-        case title, detail, state, progress, question, options, multi, header, step, summary, icon, app, open, pid, trust, started, updated
+        case title, detail, state, progress, question, options, multi, header, step, summary, icon, app, open, pid, trust, steps, started, updated
     }
 
     /// Commands worth a second look before they're allowed. Never trusted automatically.
@@ -1120,6 +1249,10 @@ struct Activity: Codable, Equatable, Identifiable {
     var trustable: Bool { agent != nil && trust == true && !risky && !isChoice && question?.hasSuffix("…") == false }
     /// How long the buttons sleep after a request appears.
     var armDelay: TimeInterval { risky ? 1.5 : 0.6 }
+
+    var hasPlan: Bool { !(steps ?? []).isEmpty }
+    var stepsDone: Int { (steps ?? []).filter { $0.state == "done" }.count }
+    var currentStep: Step? { (steps ?? []).first { $0.state == "active" } }
 
     /// The coding agent this activity belongs to, if any.
     var agent: Agent? { Agent.allCases.first { id.hasPrefix($0.rawValue + "-") } }
@@ -1167,7 +1300,7 @@ enum ActivityFiles {
         try? encoder.encode(a).write(to: url(a.id), options: .atomic)
     }
     static func remove(_ id: String) {
-        for ext in ["json", "reply"] { try? FileManager.default.removeItem(at: url(id, ext)) }
+        for ext in ["json", "reply", "lock"] { try? FileManager.default.removeItem(at: url(id, ext)) }
     }
 }
 
@@ -1806,6 +1939,8 @@ enum CLI {
             a.question = nil
             a.summary = nil
             a.started = Date()
+            // A list that was finished belongs to what was asked before.
+            if a.hasPlan && a.stepsDone == a.steps?.count { a.steps = nil }
             let prompt = (j["prompt"] as? String ?? "").split(separator: "\n").first.map(String.init) ?? ""
             // Messages the app itself sends the agent (<task-notification>…) aren't what you asked.
             if privateMode { a.detail = nil } else if !prompt.hasPrefix("<") { a.detail = String(prompt.prefix(90)) }
@@ -1844,6 +1979,21 @@ enum CLI {
             if let data = try? JSONSerialization.data(withJSONObject: out) { FileHandle.standardOutput.write(data) }
         case "PreToolUse" where (j["tool_name"] as? String) == "AskUserQuestion":
             return answerQuestions(a, input: j["tool_input"] as? [String: Any] ?? [:])
+        case "PostToolUse", "postToolUse":
+            guard existing != nil else { return 0 }
+            // Several tools can finish at once (three TaskCreate in one go): one change at a time,
+            // each starting from what the one before it left.
+            let lock = open(ActivityFiles.url(id, "lock").path, O_CREAT | O_RDWR, 0o600)
+            if lock >= 0 { flock(lock, LOCK_EX) }
+            defer { if lock >= 0 { flock(lock, LOCK_UN); close(lock) } }
+            guard var now = ActivityFiles.read(id) else { return 0 }
+            now.id = id
+            let before = now.steps
+            // Private: the plan's text stays out of the notch, including what was there before.
+            if privateMode { now.steps = nil } else {
+                updatePlan(&now, tool: (j["tool_name"] as? String) ?? "", input: j["tool_input"] as? [String: Any] ?? [:], response: j["tool_response"])
+            }
+            if now.steps != before { ActivityFiles.write(now) }
         case "Stop", "agentStop":
             // Codex reads a Stop hook's output as JSON, so say "nothing to add" in JSON.
             if agent == .codex { FileHandle.standardOutput.write(Data("{}".utf8)) }
@@ -1859,6 +2009,55 @@ enum CLI {
             break
         }
         return 0
+    }
+
+    /// Keeps the activity's steps in line with the agent's to-do list. A whole list replaces what
+    /// was there (TodoWrite, update_plan); TaskCreate and TaskUpdate change one step at a time.
+    private static func updatePlan(_ a: inout Activity, tool: String, input: [String: Any], response: Any?) {
+        func clean(_ s: String?) -> String? {
+            guard let line = s?.split(separator: "\n").first.map(String.init)?.trimmingCharacters(in: .whitespaces), !line.isEmpty else { return nil }
+            return String(line.prefix(120))
+        }
+        func state(_ s: String?) -> String {
+            switch s { case "completed", "done": return "done"; case "in_progress", "active": return "active"; default: return "pending" }
+        }
+        var steps = a.steps ?? []
+        let list = (input["todos"] as? [[String: Any]]) ?? (input["items"] as? [[String: Any]]) ?? (input["plan"] as? [[String: Any]])
+        if let list {
+            steps = list.prefix(40).compactMap { t in
+                clean((t["content"] as? String) ?? (t["step"] as? String) ?? (t["subject"] as? String)).map {
+                    Activity.Step(id: nil, text: $0, doing: clean(t["activeForm"] as? String), state: state(t["status"] as? String))
+                }
+            }
+        } else if tool == "TaskCreate" {
+            guard let text = clean(input["subject"] as? String), steps.count < 40 else { return }
+            // "Task #3 created…": the number TaskUpdate will use.
+            let said = (response as? String) ?? (response.flatMap { try? JSONSerialization.data(withJSONObject: $0) }.flatMap { String(data: $0, encoding: .utf8) }) ?? ""
+            let found = said.range(of: #"(?<=#|"id":"|"id":|"taskId":")\d+"#, options: .regularExpression).map { String(said[$0]) }
+            let next = (steps.compactMap { $0.id.flatMap(Int.init) }.max() ?? 0) + 1
+            steps.append(.init(id: found ?? String(next), text: text, doing: clean(input["activeForm"] as? String), state: "pending"))
+            // Created together, they can arrive in any order: keep the agent's own numbering.
+            if steps.allSatisfy({ $0.id.flatMap(Int.init) != nil }) { steps.sort { Int($0.id!)! < Int($1.id!)! } }
+        } else if tool == "TaskUpdate" {
+            let wanted = (input["taskId"] as? String) ?? (input["taskId"] as? Int).map(String.init) ?? ""
+            guard let i = steps.firstIndex(where: { $0.id == wanted }) else { return }
+            if let status = input["status"] as? String {
+                if status == "deleted" { steps.remove(at: i) } else { steps[i].state = state(status) }
+            }
+            if i < steps.count {
+                if let text = clean(input["subject"] as? String) { steps[i].text = text }
+                if let doing = clean(input["activeForm"] as? String) { steps[i].doing = doing }
+            }
+        } else {
+            // update_plan's shortcuts: the next step, or steps by their number.
+            if input["advance"] as? Bool == true {
+                if let i = steps.firstIndex(where: { $0.state == "active" }) { steps[i].state = "done" }
+                if let i = steps.firstIndex(where: { $0.state == "pending" }) { steps[i].state = "active" }
+            }
+            for n in (input["done"] as? [Int]) ?? [] where n >= 1 && n <= steps.count { steps[n - 1].state = "done" }
+            if let n = input["start"] as? Int, n >= 1, n <= steps.count { steps[n - 1].state = "active" }
+        }
+        a.steps = steps.isEmpty ? nil : steps
     }
 
     /// Claude Code's multiple-choice questions, answered in the notch one after another. Any
@@ -1934,6 +2133,10 @@ final class DevTasks {
     private var timer: Timer?
     private var tracked: [pid_t: Task] = [:]
     private let queue = DispatchQueue(label: "notch.devtasks", qos: .utility)
+    /// Processes already looked at that aren't a build: most of the list, scan after scan. Forgotten
+    /// every so often, since a pid can be reused and a process can turn into another (`exec make`).
+    private var ignored: Set<pid_t> = []
+    private var scans = 0
 
     /// Commands that are worth watching, and which of their subcommands count (empty: all of them).
     private static let tools: [String: Set<String>] = [
@@ -1990,11 +2193,16 @@ final class DevTasks {
         let now = Date()
         var found: [pid_t: (args: [String], start: Int, ppid: pid_t)] = [:]
         // Cheapest check first: one call for the name, the rest only for the few that could match.
-        for pid in Self.pids() {
+        scans += 1
+        if scans % 10 == 0 { ignored.removeAll(keepingCapacity: true) }
+        for pid in Self.pids() where !ignored.contains(pid) {
             let name = Self.name(pid)
             // (Apple's make calls itself gnumake; the arguments say "make".)
             guard Self.tools[name] != nil || Self.interpreters.contains(name) || name == "gnumake",
-                  let info = Self.bsdInfo(pid), let args = Self.arguments(pid), Self.match(args) != nil else { continue }
+                  let info = Self.bsdInfo(pid), let args = Self.arguments(pid), Self.match(args) != nil else {
+                ignored.insert(pid)
+                continue
+            }
             found[pid] = (args, info.start, info.ppid)
         }
         // A tool started by another one (make → make, brew.sh → ruby brew.rb) is the same task,
@@ -2161,9 +2369,14 @@ enum AgentHooks {
     private static func events(_ agent: Agent) -> [Event] {
         var list: [Event] = [("UserPromptSubmit", nil, nil), ("PermissionRequest", 600, nil), ("Stop", nil, nil), ("SessionEnd", nil, nil)]
         // Claude Code lets a hook answer its multiple-choice questions.
-        if agent == .claude { list.append(("PreToolUse", 600, "AskUserQuestion")) }
+        if agent == .claude {
+            list.append(("PreToolUse", 600, "AskUserQuestion"))
+            // Its to-do list, each time it changes: the notch shows the plan and how far along it is.
+            list.append(("PostToolUse", nil, planTools))
+        }
         return list
     }
+    static let planTools = "TodoWrite|TaskCreate|TaskUpdate|mcp__ccd_turn__update_plan"
     private static var binary: String { Bundle.main.executablePath ?? "/Applications/NotchUser.app/Contents/MacOS/NotchUser" }
     private static let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/NotchUser", isDirectory: true)
@@ -3091,6 +3304,72 @@ final class MicMonitor: ObservableObject {
 
 /// The hinge sensor in recent MacBooks: an HID device Apple doesn't document, which reports
 /// the lid angle in degrees. Read twice a second, only while something needs it.
+/// The charger going in or out, a low battery and a full one, each as a short note in the notch.
+/// Nothing is polled: macOS calls back when the power source changes.
+final class Battery {
+    var onEvent: ((NotchState.Toast) -> Void)?
+    private var source: CFRunLoopSource?
+    private var plugged: Bool?
+    private var warnedAt = 101   // the lowest warning already given since the charger came out
+    private var saidFull = false
+
+    func update() {
+        if Settings.shared.batteryEnabled, source == nil {
+            let me = Unmanaged.passUnretained(self).toOpaque()
+            guard let s = IOPSNotificationCreateRunLoopSource({ ctx in
+                guard let ctx else { return }
+                Unmanaged<Battery>.fromOpaque(ctx).takeUnretainedValue().changed()
+            }, me)?.takeRetainedValue() else { return }
+            CFRunLoopAddSource(CFRunLoopGetMain(), s, .defaultMode)
+            source = s
+            plugged = read()?.plugged
+        } else if !Settings.shared.batteryEnabled, let s = source {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), s, .defaultMode)
+            source = nil
+            plugged = nil
+        }
+    }
+
+    /// nil on a Mac without a battery.
+    private func read() -> (plugged: Bool, percent: Int, full: Bool)? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return nil }
+        for item in list {
+            guard let d = IOPSGetPowerSourceDescription(info, item)?.takeUnretainedValue() as? [String: Any],
+                  d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
+                  let now = d[kIOPSCurrentCapacityKey] as? Int, let top = d[kIOPSMaxCapacityKey] as? Int, top > 0 else { continue }
+            let percent = Int((Double(now) / Double(top) * 100).rounded())
+            return (d[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue, percent, d[kIOPSIsChargedKey] as? Bool == true)
+        }
+        return nil
+    }
+
+    private static func symbol(_ percent: Int) -> String {
+        percent > 87 ? "battery.100" : percent > 62 ? "battery.75" : percent > 37 ? "battery.50" : percent > 12 ? "battery.25" : "battery.0"
+    }
+
+    private func changed() {
+        guard let now = read() else { return }
+        let level = "\(now.percent)%"
+        if let was = plugged, was != now.plugged {
+            if now.plugged {
+                warnedAt = 101
+                onEvent?(.init(icon: "bolt.fill", title: L("batteryCharging"), detail: level, ok: true))
+            } else {
+                saidFull = false
+                onEvent?(.init(icon: Self.symbol(now.percent), title: L("batteryUnplugged"), detail: level, ok: true))
+            }
+        } else if !now.plugged, let limit = [10, 20].first(where: { now.percent <= $0 }), limit < warnedAt {
+            warnedAt = limit
+            onEvent?(.init(icon: "battery.25", title: L("batteryLow"), detail: level, ok: false))
+        } else if now.plugged, now.full, !saidFull, plugged != nil {
+            saidFull = true
+            onEvent?(.init(icon: "battery.100.bolt", title: L("batteryFull"), detail: nil, ok: true))
+        }
+        plugged = now.plugged
+    }
+}
+
 /// NSScreen.screens builds new objects on every call; the hover loop asks 30 times a second.
 enum ScreenList {
     private static var cached: [NSScreen]?
@@ -3674,6 +3953,8 @@ final class NotchState: ObservableObject {
     @Published var activityRows = 0      // live activities listed at the top
     @Published var question: Activity?   // an agent's multiple-choice question takes over the notch
     @Published var result: Activity?     // an agent finished: what it did, shown on its own
+    @Published var plan: Activity?       // a running agent's to-do list, opened with a click on its row
+    var planID: String?
     /// The player shows the lyrics beside a smaller player (stays chosen until turned off).
     @Published var lyricsMode = false
     /// The lyric line under the closed notch, and the width it needs.
@@ -3725,6 +4006,13 @@ final class NotchState: ObservableObject {
         let lines = min(4, max(1, ceil(CGFloat((r.summary ?? "").count) / 62)))
         let asked: CGFloat = (r.detail ?? "").isEmpty ? 0 : 22
         return 30 + asked + 8 + lines * 18 + 14 + 26
+    }
+
+    /// Header, what was asked, the steps (the list scrolls past eight) and the buttons.
+    static let planRows = 8
+    static func planHeight(_ p: Activity) -> CGFloat {
+        let asked: CGFloat = (p.detail ?? "").isEmpty ? 0 : 22
+        return 30 + asked + 6 + CGFloat(min(planRows, p.steps?.count ?? 0)) * 22 + 12 + 26
     }
 
     /// Laid out to fit the question: its text, one card per option, and the music still playing.
@@ -3818,6 +4106,7 @@ final class NotchState: ObservableObject {
         if toast != nil { return CGSize(width: Self.width, height: notchH + chrome + Self.toastHeight) }
         if let q = question { return CGSize(width: Self.width, height: notchH + chrome + Self.questionHeight(q, media: showMedia)) }
         if let r = result { return CGSize(width: Self.width, height: notchH + chrome + Self.resultHeight(r)) }
+        if let p = plan { return CGSize(width: Self.width, height: notchH + chrome + Self.planHeight(p)) }
         if paged { return CGSize(width: Self.width, height: notchH + chrome + pagedHeight + Self.dotsHeight) }
         var sections: [CGFloat] = []
         if activityRows > 0 { sections.append(Self.activityHeight * CGFloat(activityRows)) }
@@ -4478,7 +4767,11 @@ extension Activity {
         let time = Activity.duration(elapsed(at: now))
         switch state {
         case .waiting: return question ?? L("activityWaiting")
-        case .running: return [detail, time].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
+        case .running:
+            // With a plan: how far along, and what it's on right now.
+            let plan = hasPlan ? "\(stepsDone)/\(steps?.count ?? 0)" : nil
+            let what = currentStep.map { $0.doing ?? $0.text } ?? detail
+            return [plan, what, time].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
         case .done: return L("activityDone") + " · " + time
         case .failed: return [L("activityFailed"), detail, time].compactMap { $0 }.joined(separator: " · ")
         }
@@ -4851,6 +5144,36 @@ struct PageDots: View {
 }
 
 /// An agent finished its turn: its app, the folder, what you asked and what it says it did.
+/// The agent's icon and the activity's title, heading its cards (the result, the plan).
+struct AgentTitle: View {
+    var item: Activity
+    var body: some View {
+        Group {
+            if let img = item.agent?.iconImage {
+                Image(nsImage: img).resizable()
+            } else {
+                Image(systemName: item.icon ?? "sparkle").font(.system(size: 13, weight: .bold)).foregroundColor(.orange)
+            }
+        }
+        .frame(width: 22, height: 22)
+        Text(item.title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+    }
+}
+
+/// What you asked the agent, on one line under the title.
+struct AskedLine: View {
+    var item: Activity
+    var body: some View {
+        if let asked = item.detail, !asked.isEmpty {
+            Label(asked, systemImage: "text.bubble")
+                .font(.system(size: 11.5))
+                .foregroundColor(.white.opacity(0.45))
+                .lineLimit(1)
+                .frame(height: 22, alignment: .leading)
+        }
+    }
+}
+
 struct ResultView: View {
     var item: Activity
     var activities: Activities
@@ -4859,15 +5182,7 @@ struct ResultView: View {
         let ok = item.state == .done
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
-                Group {
-                    if let img = item.agent?.iconImage {
-                        Image(nsImage: img).resizable()
-                    } else {
-                        Image(systemName: item.icon ?? "sparkle").font(.system(size: 13, weight: .bold)).foregroundColor(.orange)
-                    }
-                }
-                .frame(width: 22, height: 22)
-                Text(item.title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                AgentTitle(item: item)
                 Spacer(minLength: 8)
                 Label(L(ok ? "activityDone" : "activityFailed") + " · " + Activity.duration(item.elapsed(at: Date())),
                       systemImage: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -4876,13 +5191,7 @@ struct ResultView: View {
                     .fixedSize()
             }
             .frame(height: 30)
-            if let asked = item.detail, !asked.isEmpty {
-                Label(asked, systemImage: "text.bubble")
-                    .font(.system(size: 11.5))
-                    .foregroundColor(.white.opacity(0.45))
-                    .lineLimit(1)
-                    .frame(height: 22, alignment: .leading)
-            }
+            AskedLine(item: item)
             Text(item.summary ?? "")
                 .font(.system(size: 13))
                 .foregroundColor(.white.opacity(0.9))
@@ -4898,6 +5207,80 @@ struct ResultView: View {
             }
             .frame(height: 26)
         }
+    }
+}
+
+/// A running agent's to-do list: done, the one it's on, and what's left.
+struct PlanView: View {
+    var item: Activity
+    var activities: Activities
+    var close: () -> Void
+
+    var body: some View {
+        let steps = item.steps ?? []
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                AgentTitle(item: item)
+                Spacer(minLength: 8)
+                TimelineView(MinuteSchedule(start: item.started ?? Date())) { ctx in
+                    Text(L("planProgress", item.stepsDone, steps.count) + " · " + Activity.duration(item.elapsed(at: ctx.date)))
+                        .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                        .foregroundColor(item.color)
+                        .fixedSize()
+                }
+            }
+            .frame(height: 30)
+            AskedLine(item: item)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(steps.enumerated()), id: \.offset) { n, step in
+                            row(step).id(n)
+                        }
+                    }
+                }
+                .frame(height: CGFloat(min(NotchState.planRows, steps.count)) * 22)
+                // A long list opens on the step in progress.
+                .onAppear { if let n = steps.firstIndex(where: { $0.state == "active" }) { proxy.scrollTo(n, anchor: .center) } }
+                .onChange(of: item.currentStep) { _ in
+                    if let n = steps.firstIndex(where: { $0.state == "active" }) { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(n, anchor: .center) } }
+                }
+            }
+            .padding(.top, 6)
+            Spacer(minLength: 12)
+            HStack(spacing: 8) {
+                Spacer()
+                Button(L("back")) { close() }.buttonStyle(ActivityButtonStyle(primary: false))
+                Button(L("openApp", item.agent?.name ?? "")) { activities.activate(item) }.buttonStyle(ActivityButtonStyle(primary: true))
+            }
+            .frame(height: 26)
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: item.steps)
+    }
+
+    private func row(_ step: Activity.Step) -> some View {
+        let done = step.state == "done", active = step.state == "active"
+        return HStack(spacing: 8) {
+            Group {
+                if active {
+                    Spinner(color: item.color).frame(width: 11, height: 11)
+                } else {
+                    Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(done ? .green.opacity(0.85) : .white.opacity(0.3))
+                }
+            }
+            .frame(width: 14, height: 14)
+            Text(active ? (step.doing ?? step.text) : step.text)
+                .font(.system(size: 12, weight: active ? .semibold : .regular))
+                .foregroundColor(.white.opacity(active ? 0.95 : done ? 0.45 : 0.7))
+                .strikethrough(done, color: .white.opacity(0.3))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .frame(height: 22)
+        .help(step.text)
     }
 }
 
@@ -4924,6 +5307,9 @@ struct ActivityRow: View {
     /// the place of the one just answered: the buttons wake up only after a moment.
     @StateObject private var armed = Box(false)
     @StateObject private var hovering = Box(false)
+    /// Opens the agent's plan (a running agent that keeps one).
+    var onPlan: ((Activity) -> Void)?
+    private var showsPlan: Bool { onPlan != nil && item.state == .running && item.hasPlan }
     var body: some View {
         HStack(spacing: 12) {
             ActivityBadge(item: item, size: 30)
@@ -4967,6 +5353,11 @@ struct ActivityRow: View {
                     withAnimation(.easeOut(duration: 0.15)) { armed.value = true }
                 }
                 .transition(.scale(scale: 0.8).combined(with: .opacity))
+            } else if showsPlan {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(hovering.value ? 0.85 : 0.4))
+                    .frame(width: 24, height: 24)
             } else if item.finished {
                 if item.state == .failed, let detail = item.detail {
                     // Why it failed, ready to paste somewhere.
@@ -4983,8 +5374,8 @@ struct ActivityRow: View {
         }
         .frame(height: NotchState.activityHeight)
         .contentShape(Rectangle())
-        .onTapGesture { activities.activate(item) }
-        .help(item.question ?? item.detail ?? "")
+        .onTapGesture { if showsPlan { onPlan?(item) } else { activities.activate(item) } }
+        .help(showsPlan ? L("seePlan") : item.question ?? item.detail ?? "")
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: item.state)
     }
 }
@@ -5352,7 +5743,21 @@ enum NotchMenu {
                 NotificationCenter.default.post(name: AppDelegate.micToggleRequested, object: nil)
             })
         }
-        if settings.ocrEnabled || settings.mirrorEnabled || settings.micEnabled { m.addItem(.separator()) }
+        if let foco = FocoTimer.current {
+            if foco.own != nil {
+                m.addItem(item(L("timerCancel") + " (" + FocoTimer.clock(foco.remaining(at: Date())) + ")", "timer") { foco.stopOwn() })
+            } else {
+                let timer = item(L("timer"), "timer") {}
+                let times = NSMenu()
+                times.autoenablesItems = false
+                for minutes in FocoTimer.presets {
+                    times.addItem(item(L("timerMinutes", minutes), nil) { foco.startOwn(seconds: Double(minutes) * 60) })
+                }
+                timer.submenu = times
+                m.addItem(timer)
+            }
+        }
+        m.addItem(.separator())
 
         m.addItem(.sectionHeader(title: L("appearance")))
         let icons: [Settings.Style: String] = [.basic: "capsule.fill", .elevated: "square.stack.3d.up.fill", .glass: "drop.fill"]
@@ -5392,6 +5797,8 @@ enum NotchMenu {
         sub.addItem(item(L("addonLid"), "laptopcomputer", on: settings.lidPauseEnabled) { settings.lidPauseEnabled.toggle() })
         sub.addItem(item(L("addonHaptics"), "hand.tap", on: settings.hapticsEnabled) { settings.hapticsEnabled.toggle() })
         sub.addItem(item(L("addonGlow"), "rectangle.dashed", on: settings.edgeGlowEnabled) { settings.edgeGlowEnabled.toggle() })
+        sub.addItem(item(L("addonBattery"), "battery.75", on: settings.batteryEnabled) { settings.batteryEnabled.toggle() })
+        sub.addItem(item(L("addonOpenKey"), "keyboard", on: settings.openKeyEnabled) { settings.openKeyEnabled.toggle() })
         addons.submenu = sub
         m.addItem(addons)
         m.addItem(.separator())
@@ -5807,8 +6214,9 @@ struct NotchView: View {
                         }
                     }
             } else if let s = foco.session {
-                Image(systemName: s.isBreak ? "cup.and.saucer.fill" : "scope")
+                Image(systemName: foco.symbol)
                     .font(.system(size: 12, weight: .bold)).foregroundColor(foco.color)
+                    .id(s.isBreak)
             } else if let activity {
                 ActivityBadge(item: activity, size: ui.notchH - 12)
             } else if !shelf.isEmpty {
@@ -5954,12 +6362,12 @@ struct NotchView: View {
                             .stroke(foco.color, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
                             .rotationEffect(.degrees(-90))
                             .shadow(color: foco.color.opacity(0.5), radius: 3)
-                        Image(systemName: s.isBreak ? "cup.and.saucer.fill" : "scope")
+                        Image(systemName: foco.symbol)
                             .font(.system(size: 11, weight: .bold)).foregroundColor(foco.color)
                     }
                     .frame(width: 32, height: 32)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(s.isBreak ? L("break") : L("focusCycle", s.cycle, s.totalCycles))
+                        Text(foco.isOwn ? L("timer") : s.isBreak ? L("break") : L("focusCycle", s.cycle, s.totalCycles))
                             .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                         if !s.intention.isEmpty {
                             Text(s.intention).font(.system(size: 11.5)).foregroundColor(.white.opacity(0.55))
@@ -5972,13 +6380,19 @@ struct NotchView: View {
                         .foregroundColor(.white)
                         .contentTransition(.numericText(countsDown: true))
                         .animation(.easeOut(duration: 0.3), value: Int(foco.remaining(at: ctx.date)))
+                    if foco.isOwn {
+                        ControlButton(symbol: "xmark", size: 10, color: .white.opacity(0.45), box: 24) {
+                            withAnimation(.spring(response: 0.35)) { foco.stopOwn() }
+                        }
+                        .help(L("timerCancel"))
+                    }
                 }
             }
         }
         .frame(height: NotchState.focusHeight)
         .contentShape(Rectangle())
         .onTapGesture { foco.open() }
-        .help(L("openFoco"))
+        .help(foco.isOwn ? "" : L("openFoco"))
     }
 
     private var mediaSection: some View {
@@ -6221,6 +6635,10 @@ struct NotchView: View {
                 ResultView(item: r, activities: activities)
                     .id(r.id + (r.summary ?? ""))
                     .transition(.modifier(active: SoftSwap(amount: 1), identity: SoftSwap(amount: 0)))
+            } else if let p = ui.plan, ui.question == nil {
+                PlanView(item: p, activities: activities) { ui.planID = nil; ui.plan = nil }
+                    .id("plan-" + p.id)
+                    .transition(.modifier(active: SoftSwap(amount: 1), identity: SoftSwap(amount: 0)))
             } else if let q = ui.question {
                 // The agent takes over; the music keeps going in the strip at the bottom.
                 QuestionView(item: q, activities: activities, np: np, ui: ui)
@@ -6317,7 +6735,7 @@ struct NotchView: View {
         let visible = extra > 0 && all.contains(where: { $0.state == .waiting }) ? Array(all.prefix(rows)) : shown
         return VStack(spacing: 0) {
             ForEach(visible) { item in
-                ActivityRow(item: item, activities: activities)
+                ActivityRow(item: item, activities: activities) { ui.planID = $0.id; ui.plan = $0 }
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -6545,6 +6963,8 @@ struct AddOnsList: View {
                 addon(L("addonLid"), L("addonLidHint"), $settings.lidPauseEnabled)
                 addon(L("addonHaptics"), L("addonHapticsHint"), $settings.hapticsEnabled)
                 addon(L("addonGlow"), L("addonGlowHint"), $settings.edgeGlowEnabled)
+                addon(L("addonBattery"), L("addonBatteryHint"), $settings.batteryEnabled)
+                addon(L("addonOpenKey"), L("addonOpenKeyHint"), $settings.openKeyEnabled)
             }
             // Only for people who have the Foco study-timer app.
             if appURL(FocoTimer.bundleID) != nil {
@@ -7543,6 +7963,7 @@ final class NotchController {
     let panel: NotchPanel
     let displayID: CGDirectDisplayID
     var peekUntil = Date.distantPast
+    var keyOpenUntil = Date.distantPast
     /// Opens the notch whatever it holds, to try the motion and size settings.
     var previewUntil = Date.distantPast
     var levelUntil = Date.distantPast
@@ -7673,7 +8094,7 @@ final class NotchController {
         // Just past the reach of magnetism (110 pt): the browser's tabs below it stay in the slow loop.
         let zone = lastRect.map { $0.insetBy(dx: -140, dy: -140) }
             ?? NSRect(x: s.frame.midX - 420, y: s.frame.maxY - 260, width: 840, height: 260)
-        return ui.expanded || Date() < peekUntil || Date() < previewUntil || Date() < levelUntil || zone.contains(mouse)
+        return ui.expanded || Date() < peekUntil || Date() < keyOpenUntil || Date() < previewUntil || Date() < levelUntil || zone.contains(mouse)
     }
 
     /// While the right-click menu is open the notch holds still: the mouse is over the menu, not
@@ -7697,6 +8118,9 @@ final class NotchController {
         if ui.question != question { ui.question = question }
         let result = fileDrag || question != nil ? nil : activities.result
         if ui.result != result { ui.result = result }
+        let plan = fileDrag || question != nil || result != nil || ui.planID == nil ? nil
+            : activities.items.first { $0.id == ui.planID && $0.hasPlan && $0.state == .running }
+        if ui.plan != plan { ui.plan = plan }
         let rows = fileDrag ? 0 : min(activities.items.count, NotchState.maxActivities)
         if ui.activityRows != rows { ui.activityRows = rows }
         // A clock on the right: Foco's countdown, or how long the activity has been going.
@@ -7743,7 +8167,7 @@ final class NotchController {
             : (inside && now.timeIntervalSince(hoverSince ?? now) >= 0.12)
         // Stay open while macOS asks for camera permission (the mouse goes to that prompt).
         if ui.toast != nil && now >= toastUntil { ui.toast = nil }
-        let want = hovering || dragNear || camera.asking || now < mirrorHoldUntil || now < toastUntil || now < previewUntil
+        let want = hovering || dragNear || camera.asking || now < mirrorHoldUntil || now < toastUntil || now < previewUntil || now < keyOpenUntil
             || (now < peekUntil && (np.hasMedia || foco.session != nil || !activities.items.isEmpty))
         // Dragging a file in needs the drop zone, not the mirror; nor is there one with the add-on off.
         if ui.mirrorOn && (fileDrag || !Settings.shared.mirrorEnabled) { ui.mirrorOn = false }
@@ -7753,6 +8177,7 @@ final class NotchController {
             if !want && ui.mirrorOn { ui.mirrorOn = false }
             // It opens on the music again next time.
             if !want && ui.page != .main { ui.page = .main }
+            if !want { ui.planID = nil }
             ui.expanded = want
             if want {
                 shelf.prune()
@@ -7761,7 +8186,7 @@ final class NotchController {
                 }
             }
         }
-        if inside { peekUntil = .distantPast }
+        if inside { peekUntil = .distantPast; keyOpenUntil = .distantPast }
         if ui.expanded && rows > 0 { activities.markSeen() }
         let lift = inside && !ui.expanded
         if ui.hovering != lift { ui.hovering = lift }
@@ -7778,6 +8203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let audioGuard = AudioGuard()
     let activities = Activities()
     let mic = MicMonitor()
+    let battery = Battery()
+    private var openHotKey: HotKey?
     let lid = LidSensor()
     static let micToggleRequested = Notification.Name("NotchUser.micToggleRequested")
     private var ocrHotKey: HotKey?
@@ -7808,6 +8235,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Study <-> break switches peek open like a notification.
         foco.onPhaseChange = { [weak self] in self?.peek(4) }
+        foco.onFinished = { [weak self] label in
+            guard let self else { return }
+            self.showToast(.init(icon: "timer", title: L("timerDone"), detail: label.isEmpty ? nil : label, ok: true), seconds: 6)
+            NSSound(named: "Glass")?.play()
+            Haptics.play(.tap)
+            if Settings.shared.edgeGlowEnabled { EdgeGlow.shared.flash(.systemGreen) }
+        }
         shelf.onAdd = { [weak self] in
             self?.controllers.forEach { $0.bump(); $0.ui.go(to: .shelf) }
             Haptics.play(.tap)
@@ -7990,6 +8424,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindow.shared.lid = lid
         updateMicHotKey()
         let center = NotificationCenter.default
+        battery.onEvent = { [weak self] toast in
+            self?.showToast(toast, seconds: 3)
+            if !toast.ok { Haptics.play(.failure) }
+        }
+        battery.update()
+        center.addObserver(forName: Settings.batteryChanged, object: nil, queue: .main) { [weak self] _ in self?.battery.update() }
+        updateOpenHotKey()
+        center.addObserver(forName: Settings.openKeyChanged, object: nil, queue: .main) { [weak self] _ in self?.updateOpenHotKey() }
         center.addObserver(forName: Settings.micChanged, object: nil, queue: .main) { [weak self] _ in
             self?.mic.update()
             self?.updateMicHotKey()
@@ -8029,6 +8471,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showToast(toast, seconds: 3.2)
             Haptics.play(toast.ok ? .tap : .failure)
         }
+    }
+
+    /// ⌃⌥N: opens the notch without the mouse; again (or moving the mouse in and out) closes it.
+    private func updateOpenHotKey() {
+        openHotKey = Settings.shared.openKeyEnabled
+            ? HotKey(keyCode: kVK_ANSI_N, modifiers: controlKey | optionKey) { [weak self] in
+                guard let self, let c = self.mainController else { return }
+                if c.ui.expanded {
+                    c.keyOpenUntil = .distantPast
+                    c.peekUntil = .distantPast
+                } else {
+                    c.keyOpenUntil = Date().addingTimeInterval(12)
+                }
+                self.setTickRate(hot: true)
+            }
+            : nil
     }
 
     private func updateMicHotKey() {
@@ -8101,6 +8559,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "glow":
             EdgeGlow.shared.flash(Self.color(q["color"] ?? "white"))
+        case "timer":
+            // notchuser://timer?seconds=1500&title=Tea, or ?off=1
+            if q["off"] != nil { foco.stopOwn(); return }
+            guard let seconds = q["seconds"].flatMap(Double.init), seconds >= 1 else { return }
+            foco.startOwn(seconds: seconds, label: q["title"] ?? "")
+            peek(3)
+        case "plan":
+            // Opens the plan of the agent that's working (the first one that keeps a plan).
+            guard let c = mainController, let a = activities.items.first(where: { $0.hasPlan && $0.state == .running }) else { return }
+            c.ui.planID = a.id
+            c.peekUntil = Date().addingTimeInterval(8)
+            setTickRate(hot: true)
         case "lyrics":
             // Opens (or closes) the lyrics view, e.g. from a keyboard shortcut in Shortcuts.
             guard Settings.shared.lyricsEnabled, let c = mainController else { return }

@@ -45,6 +45,14 @@ O notch é um espaço morto no meio da barra de menus. O NotchUser transforma el
 - **Uma prateleira pra tudo que está de passagem.** Solte arquivos, links ou texto nela e arraste pra onde precisar.
 - **Tão leve que dá pra esquecer.** Cerca de **0,1% de CPU e 30–50 MB** com música tocando. As animações rodam no Core Animation, dentro do macOS.
 
+## Novidades da 1.9
+
+- **Veja o que o agente está fazendo.** Clique numa atividade do Claude Code em andamento e o notch mostra o plano dele: o que já foi feito, a etapa atual e o que falta. A própria linha mostra "2/5 · Rodando os testes".
+- **Um timer próprio.** Clique com o botão direito no notch → Timer, ou `notch timer 25m "Chá"`. Ele conta no notch fechado, sobrevive a dormir e reiniciar, e toca quando acaba. Sem precisar de outro app.
+- **Avisos de bateria e carregador.** Um aviso curto ao plugar ou desplugar o carregador, em 20% e 10%, e quando carrega tudo. Nada fica consultando em segundo plano.
+- **Abra pelo teclado.** Ligue o ⌃⌥N nos complementos para abrir e fechar o notch sem o mouse.
+- **Ainda mais leve.** Um Spotify ou Music pausado não é mais consultado a cada dois segundos.
+
 ## Novidades da 1.8
 
 - **Do seu jeito.** Álbum, preto puro ou uma Aurora lenta atrás do notch. Uma cor de destaque que segue o álbum ou fica na que você escolher. Escolha o que o notch fechado mostra em cada lado (capa, ondas, relógio) e o arredondamento dos cantos.
@@ -95,6 +103,7 @@ Quando o Claude Code ou o Codex termina, o notch abre com o logo dele, o que voc
 ```bash
 notch run npm test              # acompanhe qualquer comando até terminar
 notch notify "Deploy ok"        # uma mensagem curta
+notch timer 25m "Chá"           # uma contagem no notch
 notch progress build 40         # sua própria atividade, com progresso
 ```
 
