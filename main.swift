@@ -289,6 +289,21 @@ enum Strings {
         "removeSelected": ["en": "Remove the %ld selected", "pt": "Tirar os %ld selecionados", "es": "Quitar los %ld seleccionados"],
         "planProgress": ["en": "%ld of %ld", "pt": "%ld de %ld", "es": "%ld de %ld"],
         "seePlan": ["en": "See the plan", "pt": "Ver o plano", "es": "Ver el plan"],
+        "timerOther": ["en": "Other…", "pt": "Outro tempo…", "es": "Otro tiempo…"],
+        "timerOtherTitle": ["en": "How long?", "pt": "Quanto tempo?", "es": "¿Cuánto tiempo?"],
+        "timerOtherHint": ["en": "Minutes, or something like 90s, 1h30m, 2:30.", "pt": "Em minutos, ou algo como 90s, 1h30m, 2:30.", "es": "En minutos, o algo como 90s, 1h30m, 2:30."],
+        "cancel": ["en": "Cancel", "pt": "Cancelar", "es": "Cancelar"],
+        "timerStart": ["en": "Start", "pt": "Começar", "es": "Empezar"],
+        "timerAgain": ["en": "Again: %@", "pt": "De novo: %@", "es": "Otra vez: %@"],
+        "styleTitle": ["en": "Style", "pt": "Estilo", "es": "Estilo"],
+        "colorWhite": ["en": "White", "pt": "Branco", "es": "Blanco"],
+        "groupScreen": ["en": "Screen", "pt": "Tela", "es": "Pantalla"],
+        "groupWork": ["en": "Work", "pt": "Trabalho", "es": "Trabajo"],
+        "groupSound": ["en": "Sound", "pt": "Som", "es": "Sonido"],
+        "groupSystem": ["en": "System", "pt": "Sistema", "es": "Sistema"],
+        "checkNow": ["en": "Check for updates", "pt": "Verificar atualizações", "es": "Buscar actualizaciones"],
+        "upToDate": ["en": "You're up to date", "pt": "Você está na versão mais recente", "es": "Estás al día"],
+        "checkFailed": ["en": "Couldn't check for updates", "pt": "Não deu para verificar atualizações", "es": "No se pudo buscar actualizaciones"],
         "timer": ["en": "Timer", "pt": "Timer", "es": "Temporizador"],
         "timerMinutes": ["en": "%ld minutes", "pt": "%ld minutos", "es": "%ld minutos"],
         "timerCancel": ["en": "Cancel the timer", "pt": "Cancelar o timer", "es": "Cancelar el temporizador"],
@@ -1117,8 +1132,50 @@ final class FocoTimer: ObservableObject {
         let length = min(max(seconds, 1), 24 * 3600)
         own = Session(intention: String(label.prefix(60)), cycle: 1, totalCycles: 1, isBreak: false,
                       phaseStart: Date(), phaseEnd: Date().addingTimeInterval(length))
+        UserDefaults.standard.set(length, forKey: "lastTimer")
         saveOwn()
         refresh()
+    }
+
+    /// "25" and "25m" are minutes; "90s", "1h", "1h30m" and "1:30" (minutes:seconds) work too.
+    static func parse(_ text: String) -> TimeInterval? {
+        let t = text.lowercased().filter { !$0.isWhitespace }
+        if t.contains(":") {
+            let parts = t.split(separator: ":").map { Double($0) }
+            guard parts.count == 2, let m = parts[0], let s = parts[1] else { return nil }
+            return m * 60 + s > 0 ? m * 60 + s : nil
+        }
+        if let minutes = Double(t) { return minutes > 0 ? minutes * 60 : nil }
+        let re = try? NSRegularExpression(pattern: #"^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$"#)
+        guard let m = re?.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) else { return nil }
+        func part(_ i: Int) -> Double { Range(m.range(at: i), in: t).flatMap { Double(t[$0]) } ?? 0 }
+        let total = part(1) * 3600 + part(2) * 60 + part(3)
+        return total > 0 ? total : nil
+    }
+
+    /// "25 min", "1 h 30 min", "90 s"
+    static func spoken(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds)
+        if s < 60 { return "\(s) s" }
+        let h = s / 3600, m = s % 3600 / 60
+        return [h > 0 ? "\(h) h" : nil, m > 0 ? "\(m) min" : nil].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// "Other…" in the menu: a small question for the length.
+    func askLength() {
+        let ask = NSAlert()
+        ask.messageText = L("timerOtherTitle")
+        ask.informativeText = L("timerOtherHint")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        field.placeholderString = "25"
+        ask.accessoryView = field
+        ask.addButton(withTitle: L("timerStart"))
+        ask.addButton(withTitle: L("cancel"))
+        ask.window.initialFirstResponder = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard ask.runModal() == .alertFirstButtonReturn else { return }
+        guard let seconds = Self.parse(field.stringValue) else { NSSound.beep(); return }
+        startOwn(seconds: seconds)
     }
 
     func stopOwn() {
@@ -1183,7 +1240,8 @@ final class FocoTimer: ObservableObject {
         return total > 0 ? min(1, max(0, d.timeIntervalSince(s.phaseStart) / total)) : 0
     }
 
-    var color: Color { session?.isBreak == true ? .green : .orange }
+    /// The notch's own timer wears the highlight color you picked.
+    var color: Color { isOwn ? (Settings.shared.fixedAccent ?? .orange) : session?.isBreak == true ? .green : .orange }
     var symbol: String { isOwn ? "timer" : session?.isBreak == true ? "cup.and.saucer.fill" : "scope" }
 
     func open() {
@@ -1251,6 +1309,7 @@ struct Activity: Codable, Equatable, Identifiable {
     var armDelay: TimeInterval { risky ? 1.5 : 0.6 }
 
     var hasPlan: Bool { !(steps ?? []).isEmpty }
+    var planFraction: Double? { hasPlan ? Double(stepsDone) / Double(steps?.count ?? 1) : nil }
     var stepsDone: Int { (steps ?? []).filter { $0.state == "done" }.count }
     var currentStep: Step? { (steps ?? []).first { $0.state == "active" } }
 
@@ -1333,6 +1392,7 @@ enum TrustedCommands {
 
 /// Follows the activities folder. Idle costs nothing: the kernel wakes it when a file changes.
 final class Activities: ObservableObject {
+    static weak var current: Activities?
     @Published private(set) var items: [Activity] = []
     var onAttention: (() -> Void)?  // something started waiting for an answer
     var onFinish: (([Activity]) -> Void)?  // what just finished
@@ -1493,6 +1553,8 @@ final class Updates {
     private var timer: Timer?
     private var installing = false
     private var firstCheck: DispatchWorkItem?
+    /// The answer to a check from the menu: an update, none, or nil when GitHub couldn't be reached.
+    var onChecked: ((Bool?) -> Void)?
 
     func start() {
         timer?.invalidate()
@@ -1507,7 +1569,8 @@ final class Updates {
         timer?.tolerance = 3600
     }
 
-    func check() {
+    /// `manual`: asked for from the menu, so it always answers (up to date, or couldn't check).
+    func check(manual: Bool = false) {
         guard Settings.shared.checkUpdates,
               let url = URL(string: "https://api.github.com/repos/Magnumja/NotchUser/releases/latest") else { return }
         var req = URLRequest(url: url, timeoutInterval: 15)
@@ -1516,12 +1579,20 @@ final class Updates {
             guard let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tag = json["tag_name"] as? String,
                   let page = (json["html_url"] as? String).flatMap(URL.init(string:)),
-                  page.scheme == "https", page.host == "github.com" else { return }
+                  page.scheme == "https", page.host == "github.com" else {
+                if manual { DispatchQueue.main.async { self.onChecked?(nil) } }
+                return
+            }
             let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
             let zip = (json["assets"] as? [[String: Any]])?.first { $0["name"] as? String == "NotchUser.zip" }
             let asset = (zip?["browser_download_url"] as? String).flatMap(URL.init(string:))
             let digest = zip?["digest"] as? String
-            DispatchQueue.main.async { self.found(version, page, asset, digest) }
+            DispatchQueue.main.async {
+                // Asked for: say it again even if this version was already announced.
+                if manual { UserDefaults.standard.removeObject(forKey: "updateAnnounced") }
+                self.found(version, page, asset, digest)
+                if manual { self.onChecked?(self.available != nil) }
+            }
         }.resume()
     }
 
@@ -3350,18 +3421,18 @@ final class Battery {
 
     private func changed() {
         guard let now = read() else { return }
-        let level = "\(now.percent)%"
+        let level = "\(now.percent)%", bar = Double(now.percent) / 100
         if let was = plugged, was != now.plugged {
             if now.plugged {
                 warnedAt = 101
-                onEvent?(.init(icon: "bolt.fill", title: L("batteryCharging"), detail: level, ok: true))
+                onEvent?(.init(icon: "bolt.fill", title: L("batteryCharging"), detail: level, ok: true, level: bar))
             } else {
                 saidFull = false
-                onEvent?(.init(icon: Self.symbol(now.percent), title: L("batteryUnplugged"), detail: level, ok: true))
+                onEvent?(.init(icon: Self.symbol(now.percent), title: L("batteryUnplugged"), detail: level, ok: true, level: bar))
             }
         } else if !now.plugged, let limit = [10, 20].first(where: { now.percent <= $0 }), limit < warnedAt {
             warnedAt = limit
-            onEvent?(.init(icon: "battery.25", title: L("batteryLow"), detail: level, ok: false))
+            onEvent?(.init(icon: "battery.25", title: L("batteryLow"), detail: level, ok: false, level: bar))
         } else if now.plugged, now.full, !saidFull, plugged != nil {
             saidFull = true
             onEvent?(.init(icon: "battery.100.bolt", title: L("batteryFull"), detail: nil, ok: true))
@@ -3986,6 +4057,8 @@ final class NotchState: ObservableObject {
         var title: String
         var detail: String?
         var ok: Bool
+        /// 0...1, drawn as a small bar on the right (the battery).
+        var level: Double? = nil
     }
     @Published var toast: Toast?
 
@@ -4012,7 +4085,7 @@ final class NotchState: ObservableObject {
     static let planRows = 8
     static func planHeight(_ p: Activity) -> CGFloat {
         let asked: CGFloat = (p.detail ?? "").isEmpty ? 0 : 22
-        return 30 + asked + 6 + CGFloat(min(planRows, p.steps?.count ?? 0)) * 22 + 12 + 26
+        return 30 + 6 + asked + 6 + CGFloat(min(planRows, p.steps?.count ?? 0)) * 22 + 12 + 26
     }
 
     /// Laid out to fit the question: its text, one card per option, and the music still playing.
@@ -4788,7 +4861,8 @@ struct ActivityBadge: View {
             Circle().fill(c.opacity(0.16))
             switch item.state {
             case .running:
-                if let p = item.progress {
+                // Its own progress, or how far along its plan is (a sliver at the start, so it reads as a ring).
+                if let p = item.progress ?? item.planFraction.map({ max($0, 0.04) }) {
                     Circle().stroke(c.opacity(0.25), lineWidth: 2.2).padding(1.2)
                     Circle().trim(from: 0, to: p)
                         .stroke(c, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
@@ -5230,6 +5304,14 @@ struct PlanView: View {
                 }
             }
             .frame(height: 30)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.12))
+                    Capsule().fill(item.color).frame(width: max(3, g.size.width * CGFloat(item.planFraction ?? 0)))
+                }
+            }
+            .frame(height: 3)
+            .padding(.bottom, 3)
             AskedLine(item: item)
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
@@ -5725,6 +5807,36 @@ enum NotchMenu {
             m.addItem(item(L("whatsNew"), "sparkles") { NSWorkspace.shared.open(update.page) })
             m.addItem(.separator())
         }
+        // What you do, first; how it looks and behaves, in submenus below.
+        if let foco = FocoTimer.current {
+            if foco.own != nil {
+                m.addItem(item(L("timerCancel") + " (" + FocoTimer.clock(foco.remaining(at: Date())) + ")", "timer") { foco.stopOwn() })
+            } else {
+                let timer = item(L("timer"), "timer") {}
+                let times = NSMenu()
+                times.autoenablesItems = false
+                let last = UserDefaults.standard.double(forKey: "lastTimer")
+                if last > 0, !FocoTimer.presets.contains(where: { Double($0) * 60 == last }) {
+                    times.addItem(item(L("timerAgain", FocoTimer.spoken(last)), "arrow.counterclockwise") { foco.startOwn(seconds: last) })
+                    times.addItem(.separator())
+                }
+                for minutes in FocoTimer.presets {
+                    times.addItem(item(L("timerMinutes", minutes), nil) { foco.startOwn(seconds: Double(minutes) * 60) })
+                }
+                times.addItem(.separator())
+                times.addItem(item(L("timerOther"), "pencil") {
+                    // After the menu is gone, so the question isn't under it.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { foco.askLength() }
+                })
+                timer.submenu = times
+                m.addItem(timer)
+            }
+        }
+        if Activities.current?.items.contains(where: { $0.hasPlan && $0.state == .running }) == true {
+            m.addItem(item(L("seePlan"), "list.bullet") {
+                if let url = URL(string: "notchuser://plan") { NSWorkspace.shared.open(url) }
+            })
+        }
         if settings.ocrEnabled {
             m.addItem(item(L("copyTextFromScreen"), "text.viewfinder", key: "2", modifiers: [.command, .shift]) {
                 // Let the menu close before the selection crosshair appears.
@@ -5743,72 +5855,94 @@ enum NotchMenu {
                 NotificationCenter.default.post(name: AppDelegate.micToggleRequested, object: nil)
             })
         }
-        if let foco = FocoTimer.current {
-            if foco.own != nil {
-                m.addItem(item(L("timerCancel") + " (" + FocoTimer.clock(foco.remaining(at: Date())) + ")", "timer") { foco.stopOwn() })
-            } else {
-                let timer = item(L("timer"), "timer") {}
-                let times = NSMenu()
-                times.autoenablesItems = false
-                for minutes in FocoTimer.presets {
-                    times.addItem(item(L("timerMinutes", minutes), nil) { foco.startOwn(seconds: Double(minutes) * 60) })
-                }
-                timer.submenu = times
-                m.addItem(timer)
+        m.addItem(.separator())
+
+        m.addItem(submenu(L("appearance"), "paintbrush") { look in
+            look.addItem(.sectionHeader(title: L("styleTitle")))
+            let icons: [Settings.Style: String] = [.basic: "capsule.fill", .elevated: "square.stack.3d.up.fill", .glass: "drop.fill"]
+            for style in Settings.Style.allCases {
+                look.addItem(item(style.title, icons[style], on: settings.style == style) { settings.style = style })
             }
-        }
-        m.addItem(.separator())
-
-        m.addItem(.sectionHeader(title: L("appearance")))
-        let icons: [Settings.Style: String] = [.basic: "capsule.fill", .elevated: "square.stack.3d.up.fill", .glass: "drop.fill"]
-        for style in Settings.Style.allCases {
-            m.addItem(item(style.title, icons[style], on: settings.style == style) { settings.style = style })
-        }
-        let motion = item(L("motion"), "wand.and.stars") {}
-        let motions = NSMenu()
-        motions.autoenablesItems = false
-        for mo in Settings.Motion.allCases {
-            motions.addItem(item(mo.title, nil, on: settings.motion == mo) { settings.motion = mo })
-        }
-        motion.submenu = motions
-        m.addItem(motion)
-        m.addItem(.separator())
-
-        m.addItem(.sectionHeader(title: L("behavior")))
-        m.addItem(item(L("peekOnTrack"), "music.note", on: settings.peekOnTrackChange) { settings.peekOnTrackChange.toggle() })
-        m.addItem(item(L("pages"), "rectangle.split.3x1", on: settings.pagesEnabled) { settings.pagesEnabled.toggle() })
-        m.addItem(item(L("otherScreens"), "display.2", on: settings.showOnAllScreens) { settings.showOnAllScreens.toggle() })
-        m.addItem(item(L("launchAtLogin"), "sunrise", on: settings.launchAtLogin) { settings.launchAtLogin.toggle() })
-        let addons = item(L("addons"), "puzzlepiece.extension") {}
-        let sub = NSMenu()
-        sub.autoenablesItems = false
-        sub.addItem(item(L("addonOCR"), "text.viewfinder", on: settings.ocrEnabled) { settings.ocrEnabled.toggle() })
-        sub.addItem(item(L("addonMirror"), "camera", on: settings.mirrorEnabled) { settings.mirrorEnabled.toggle() })
-        sub.addItem(item(L("addonLyrics"), "quote.bubble", on: settings.lyricsEnabled) { settings.lyricsEnabled.toggle() })
-        sub.addItem(item(L("addonActivities"), "bolt.horizontal.circle", on: settings.activitiesEnabled) {
-            settings.activitiesEnabled.toggle()
-            // Connecting the agents lives in Settings; show it the first time.
-            if settings.activitiesEnabled && !AgentHooks.anyInstalled { SettingsWindow.shared.show(welcome: false, pane: .addons) }
+            look.addItem(.sectionHeader(title: L("backdropTitle")))
+            let backs: [Settings.Backdrop: String] = [.album: "photo", .black: "circle.fill", .aurora: "sparkles"]
+            for back in Settings.Backdrop.allCases {
+                look.addItem(item(back.title, backs[back], on: settings.backdrop == back) { settings.backdrop = back })
+            }
+            look.addItem(.sectionHeader(title: L("accentColor")))
+            look.addItem(item(L("accentAlbum"), "music.note", on: settings.accentHex == nil) { settings.accentHex = nil })
+            look.addItem(submenu(L("accentFixed"), "paintpalette") { colors in
+                for hex in ThemeSettings.swatches {
+                    let i = item(hex == "#FFFFFF" ? L("colorWhite") : "", nil, on: settings.accentHex == hex) { settings.accentHex = hex }
+                    i.image = dot(NSColor(Color(hex: hex) ?? .white))
+                    colors.addItem(i)
+                }
+            })
+            look.addItem(.separator())
+            look.addItem(submenu(L("motion"), "wand.and.stars") { motions in
+                for mo in Settings.Motion.allCases {
+                    motions.addItem(item(mo.title, nil, on: settings.motion == mo) { settings.motion = mo })
+                }
+            })
         })
-        sub.addItem(item(L("headphonesHQ"), "headphones", on: settings.keepHeadphonesHQ) { settings.keepHeadphonesHQ.toggle() })
-        sub.addItem(.separator())
-        sub.addItem(item(L("addonGestures"), "hand.draw", on: settings.gesturesEnabled) { settings.gesturesEnabled.toggle() })
-        sub.addItem(item(L("addonMic"), "mic", on: settings.micEnabled) { settings.micEnabled.toggle() })
-        sub.addItem(item(L("addonLid"), "laptopcomputer", on: settings.lidPauseEnabled) { settings.lidPauseEnabled.toggle() })
-        sub.addItem(item(L("addonHaptics"), "hand.tap", on: settings.hapticsEnabled) { settings.hapticsEnabled.toggle() })
-        sub.addItem(item(L("addonGlow"), "rectangle.dashed", on: settings.edgeGlowEnabled) { settings.edgeGlowEnabled.toggle() })
-        sub.addItem(item(L("addonBattery"), "battery.75", on: settings.batteryEnabled) { settings.batteryEnabled.toggle() })
-        sub.addItem(item(L("addonOpenKey"), "keyboard", on: settings.openKeyEnabled) { settings.openKeyEnabled.toggle() })
-        addons.submenu = sub
-        m.addItem(addons)
+        m.addItem(submenu(L("behavior"), "slider.horizontal.3") { sub in
+            sub.addItem(item(L("peekOnTrack"), "music.note", on: settings.peekOnTrackChange) { settings.peekOnTrackChange.toggle() })
+            sub.addItem(item(L("pages"), "rectangle.split.3x1", on: settings.pagesEnabled) { settings.pagesEnabled.toggle() })
+            sub.addItem(item(L("otherScreens"), "display.2", on: settings.showOnAllScreens) { settings.showOnAllScreens.toggle() })
+            sub.addItem(item(L("launchAtLogin"), "sunrise", on: settings.launchAtLogin) { settings.launchAtLogin.toggle() })
+        })
+        m.addItem(submenu(L("addons"), "puzzlepiece.extension") { sub in
+            sub.addItem(.sectionHeader(title: L("groupScreen")))
+            sub.addItem(item(L("addonOCR"), "text.viewfinder", on: settings.ocrEnabled) { settings.ocrEnabled.toggle() })
+            sub.addItem(item(L("addonMirror"), "camera", on: settings.mirrorEnabled) { settings.mirrorEnabled.toggle() })
+            sub.addItem(item(L("addonGlow"), "rectangle.dashed", on: settings.edgeGlowEnabled) { settings.edgeGlowEnabled.toggle() })
+            sub.addItem(.sectionHeader(title: L("groupWork")))
+            sub.addItem(item(L("addonActivities"), "bolt.horizontal.circle", on: settings.activitiesEnabled) {
+                settings.activitiesEnabled.toggle()
+                // Connecting the agents lives in Settings; show it the first time.
+                if settings.activitiesEnabled && !AgentHooks.anyInstalled { SettingsWindow.shared.show(welcome: false, pane: .addons) }
+            })
+            sub.addItem(.sectionHeader(title: L("groupSound")))
+            sub.addItem(item(L("addonLyrics"), "quote.bubble", on: settings.lyricsEnabled) { settings.lyricsEnabled.toggle() })
+            sub.addItem(item(L("headphonesHQ"), "headphones", on: settings.keepHeadphonesHQ) { settings.keepHeadphonesHQ.toggle() })
+            sub.addItem(item(L("addonMic"), "mic", on: settings.micEnabled) { settings.micEnabled.toggle() })
+            sub.addItem(.sectionHeader(title: L("groupSystem")))
+            sub.addItem(item(L("addonGestures"), "hand.draw", on: settings.gesturesEnabled) { settings.gesturesEnabled.toggle() })
+            sub.addItem(item(L("addonOpenKey"), "keyboard", on: settings.openKeyEnabled) { settings.openKeyEnabled.toggle() })
+            sub.addItem(item(L("addonBattery"), "battery.75", on: settings.batteryEnabled) { settings.batteryEnabled.toggle() })
+            sub.addItem(item(L("addonLid"), "laptopcomputer", on: settings.lidPauseEnabled) { settings.lidPauseEnabled.toggle() })
+            sub.addItem(item(L("addonHaptics"), "hand.tap", on: settings.hapticsEnabled) { settings.hapticsEnabled.toggle() })
+        })
         m.addItem(.separator())
 
         if !shelf.isEmpty {
             m.addItem(item(L("clearShelf"), "trash") { withAnimation(.spring(response: 0.35)) { shelf.clear() } })
         }
+        if Updates.shared.available == nil, settings.checkUpdates {
+            m.addItem(item(L("checkNow"), "arrow.triangle.2.circlepath") { Updates.shared.check(manual: true) })
+        }
         m.addItem(item(L("settings"), "gearshape", key: ",") { SettingsWindow.shared.show(welcome: false) })
         m.addItem(item(L("quit"), "power", key: "q") { NSApp.terminate(nil) })
         return m
+    }
+
+    private static func submenu(_ title: String, _ symbol: String, _ fill: (NSMenu) -> Void) -> NSMenuItem {
+        let parent = item(title, symbol) {}
+        let sub = NSMenu()
+        sub.autoenablesItems = false
+        fill(sub)
+        parent.submenu = sub
+        return parent
+    }
+
+    /// A round swatch for the color items.
+    private static func dot(_ color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
+            NSColor.labelColor.withAlphaComponent(0.25).setStroke()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 1.5, dy: 1.5)).stroke()
+            return true
+        }
     }
 
     private static func item(_ title: String, _ symbol: String?, key: String = "", modifiers: NSEvent.ModifierFlags = .command,
@@ -6228,11 +6362,17 @@ struct NotchView: View {
             }
             Spacer()
             if foco.session != nil {
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    Text(FocoTimer.clock(foco.remaining(at: ctx.date)))
-                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                        .foregroundColor(foco.color)
-                        .fixedSize()
+                HStack(spacing: 3) {
+                    // With music the cover is on the left: say here that these numbers are a timer.
+                    if np.hasMedia {
+                        Image(systemName: foco.symbol).font(.system(size: 9.5, weight: .bold)).foregroundColor(foco.color.opacity(0.85))
+                    }
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        Text(FocoTimer.clock(foco.remaining(at: ctx.date)))
+                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .foregroundColor(foco.color)
+                            .fixedSize()
+                    }
                 }
             } else if let activity, activity.state == .waiting {
                 Image(systemName: "hand.raised.fill")
@@ -6620,6 +6760,14 @@ struct NotchView: View {
                 }
             }
             Spacer(minLength: 0)
+            if let level = t.level {
+                let color: Color = level > 0.5 ? .green : level > 0.2 ? .yellow : .red
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.15))
+                    Capsule().fill(color).frame(width: max(5, 64 * CGFloat(level)))
+                }
+                .frame(width: 64, height: 5)
+            }
         }
         .frame(height: NotchState.toastHeight)
         .transition(.opacity)
@@ -7153,7 +7301,7 @@ struct AgentPrefs: View {
 
 struct ThemeSettings: View {
     @ObservedObject var settings = Settings.shared
-    private static let swatches = ["#FF5E57", "#FF9F0A", "#FFD60A", "#30D158", "#40C8E0", "#0A84FF", "#8A5CF6", "#FF2D92", "#FFFFFF"]
+    static let swatches = ["#FF5E57", "#FF9F0A", "#FFD60A", "#30D158", "#40C8E0", "#0A84FF", "#8A5CF6", "#FF2D92", "#FFFFFF"]
 
     private var pick: Binding<Color> {
         Binding(get: { settings.fixedAccent ?? .white }, set: { settings.accentHex = $0.hex })
@@ -8235,6 +8383,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Study <-> break switches peek open like a notification.
         foco.onPhaseChange = { [weak self] in self?.peek(4) }
+        Activities.current = activities
+        Updates.shared.onChecked = { [weak self] found in
+            switch found {
+            case true?: self?.peek(5)
+            case false?: self?.showToast(.init(icon: "checkmark.circle.fill", title: L("upToDate"), detail: Updates.current, ok: true))
+            case nil: self?.showToast(.init(icon: "wifi.exclamationmark", title: L("checkFailed"), detail: nil, ok: false))
+            }
+        }
         foco.onFinished = { [weak self] label in
             guard let self else { return }
             self.showToast(.init(icon: "timer", title: L("timerDone"), detail: label.isEmpty ? nil : label, ok: true), seconds: 6)
