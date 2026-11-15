@@ -45,6 +45,13 @@ O notch é um espaço morto no meio da barra de menus. O NotchUser transforma el
 - **Uma prateleira pra tudo que está de passagem.** Solte arquivos, links ou texto nela e arraste pra onde precisar.
 - **Tão leve que dá pra esquecer.** Cerca de **0,1% de CPU e 30–50 MB** com música tocando. As animações rodam no Core Animation, dentro do macOS.
 
+## Novidades da 1.10
+
+- **Seus sites e apps no notch.** Até 8 favoritos como ícones brilhantes que inclinam na direção do mouse e brilham na própria cor. Ficam maiores numa página só deles e compactos quando está tudo junto. Adicione em Ajustes → Complementos.
+- **Botões rápidos.** Manter o Mac acordado (até você desligar, ou 1, 2 ou 4 horas pelo menu), bloquear a tela, uma nota rápida embaixo do notch e até 6 dos seus Atalhos.
+- **AirDrop da prateleira.** Um botão manda o que está nela.
+- **Menu mais organizado**, e um timer com "Outro tempo…" e "De novo".
+
 ## Novidades da 1.9
 
 - **Veja o que o agente está fazendo.** Clique numa atividade do Claude Code em andamento e o notch mostra o plano dele: o que já foi feito, a etapa atual e o que falta. A própria linha mostra "2/5 · Rodando os testes".

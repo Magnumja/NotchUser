@@ -13,6 +13,7 @@ import ScreenCaptureKit
 import AudioToolbox
 import IOKit.hid
 import IOKit.ps
+import IOKit.pwr_mgt
 import CoreImage
 import ImageIO
 import CryptoKit
@@ -153,6 +154,8 @@ final class Settings: ObservableObject {
         }
     }
     static let openKeyChanged = Notification.Name("NotchUser.openKeySettingChanged")
+    /// Favorite sites, apps and Shortcuts, plus quick buttons, at the bottom of the open notch.
+    @Published var launcherEnabled: Bool { didSet { d.set(launcherEnabled, forKey: "launcherEnabled") } }
     /// Pause the music (and mute the mic) when the lid is lowered.
     @Published var lidPauseEnabled: Bool {
         didSet {
@@ -228,6 +231,7 @@ final class Settings: ObservableObject {
         micEnabled = d.bool(forKey: "micEnabled")
         batteryEnabled = d.object(forKey: "batteryEnabled") as? Bool ?? true
         openKeyEnabled = d.bool(forKey: "openKeyEnabled")
+        launcherEnabled = d.object(forKey: "launcherEnabled") as? Bool ?? true
         lidPauseEnabled = d.bool(forKey: "lidPauseEnabled")
         lidThreshold = d.object(forKey: "lidThreshold") as? Double ?? 40
         hapticsEnabled = d.object(forKey: "hapticsEnabled") as? Bool ?? true
@@ -289,6 +293,36 @@ enum Strings {
         "removeSelected": ["en": "Remove the %ld selected", "pt": "Tirar os %ld selecionados", "es": "Quitar los %ld seleccionados"],
         "planProgress": ["en": "%ld of %ld", "pt": "%ld de %ld", "es": "%ld de %ld"],
         "seePlan": ["en": "See the plan", "pt": "Ver o plano", "es": "Ver el plan"],
+        "shortcutRunning": ["en": "Running Shortcut", "pt": "Rodando Atalho", "es": "Ejecutando Atajo"],
+        "shortcutMissing": ["en": "That Shortcut is gone (renamed?)", "pt": "Esse Atalho não existe mais (renomeado?)", "es": "Ese Atajo ya no existe (¿renombrado?)"],
+        "shortcutFailed": ["en": "The Shortcut didn't run", "pt": "O Atalho não rodou", "es": "El Atajo no se ejecutó"],
+        "keepAwakeOn": ["en": "Keeping the Mac awake", "pt": "Mantendo o Mac acordado", "es": "Manteniendo el Mac despierto"],
+        "addonLauncher": ["en": "Shortcuts and quick buttons", "pt": "Atalhos e botões rápidos", "es": "Atajos y botones rápidos"],
+        "launcherShow": ["en": "Show at the bottom of the open notch", "pt": "Mostrar embaixo do notch aberto", "es": "Mostrar abajo del notch abierto"],
+        "launcherHint": ["en": "Up to 8 sites and apps as icons, and up to 6 of your Shortcuts as buttons, next to Keep awake, Lock and a quick note.",
+                         "pt": "Até 8 sites e apps como ícones, e até 6 dos seus Atalhos como botões, ao lado de Manter acordado, Bloquear e uma nota rápida.",
+                         "es": "Hasta 8 sitios y apps como iconos, y hasta 6 de tus Atajos como botones, junto a Mantener despierto, Bloquear y una nota rápida."],
+        "launcherSitePlaceholder": ["en": "A site, like github.com", "pt": "Um site, como github.com", "es": "Un sitio, como github.com"],
+        "launcherBadSite": ["en": "That isn't a web address (or the list is full).", "pt": "Isso não é um endereço de site (ou a lista está cheia).", "es": "Eso no es una dirección web (o la lista está llena)."],
+        "launcherAddApp": ["en": "Add app…", "pt": "Adicionar app…", "es": "Añadir app…"],
+        "launcherAddShortcut": ["en": "Add a Shortcut", "pt": "Adicionar um Atalho", "es": "Añadir un Atajo"],
+        "launcherNoShortcuts": ["en": "No Shortcuts found", "pt": "Nenhum Atalho encontrado", "es": "No se encontraron Atajos"],
+        "launcherAdd": ["en": "Add sites and apps", "pt": "Adicionar sites e apps", "es": "Añadir sitios y apps"],
+        "add": ["en": "Add", "pt": "Adicionar", "es": "Añadir"],
+        "kind.app": ["en": "App", "pt": "App", "es": "App"],
+        "kind.shortcut": ["en": "Shortcut", "pt": "Atalho", "es": "Atajo"],
+        "kind.site": ["en": "Site", "pt": "Site", "es": "Sitio"],
+        "keepAwake": ["en": "Keep awake", "pt": "Manter acordado", "es": "Mantener despierto"],
+        "keepAwakeStop": ["en": "Stop keeping awake", "pt": "Parar de manter acordado", "es": "Dejar de mantener despierto"],
+        "forHours": ["en": "For %ld h", "pt": "Por %ld h", "es": "Durante %ld h"],
+        "untilOff": ["en": "Until I turn it off", "pt": "Até eu desligar", "es": "Hasta que lo apague"],
+        "lockScreen": ["en": "Lock screen", "pt": "Bloquear tela", "es": "Bloquear pantalla"],
+        "quickNote": ["en": "Quick note", "pt": "Nota rápida", "es": "Nota rápida"],
+        "quickNoteHint": ["en": "Write here… it's saved as you type. Esc closes.", "pt": "Escreva aqui… salva enquanto você digita. Esc fecha.", "es": "Escribe aquí… se guarda mientras escribes. Esc cierra."],
+        "toNotes": ["en": "To Notes", "pt": "Para o Notas", "es": "A Notas"],
+        "clear": ["en": "Clear", "pt": "Limpar", "es": "Borrar"],
+        "runShortcut": ["en": "Run “%@”", "pt": "Rodar “%@”", "es": "Ejecutar “%@”"],
+        "shareShelf": ["en": "AirDrop or share", "pt": "AirDrop ou compartilhar", "es": "AirDrop o compartir"],
         "timerOther": ["en": "Other…", "pt": "Outro tempo…", "es": "Otro tiempo…"],
         "timerOtherTitle": ["en": "How long?", "pt": "Quanto tempo?", "es": "¿Cuánto tiempo?"],
         "timerOtherHint": ["en": "Minutes, or something like 90s, 1h30m, 2:30.", "pt": "Em minutos, ou algo como 90s, 1h30m, 2:30.", "es": "En minutos, o algo como 90s, 1h30m, 2:30."],
@@ -2642,6 +2676,24 @@ struct ShelfEntry: Codable, Hashable, Identifiable {
 }
 
 final class Shelf: ObservableObject {
+    /// AirDrop first, since that's what a shelf is for; the other ways to share come along.
+    func share(_ entries: [ShelfEntry]) {
+        let things: [Any] = entries.map { e -> Any in
+            switch e.kind {
+            case .file: return URL(fileURLWithPath: e.value)
+            case .link: return URL(string: e.value) ?? e.value
+            case .text: return e.value
+            }
+        }
+        guard !things.isEmpty else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        if let airdrop = NSSharingService(named: .sendViaAirDrop), airdrop.canPerform(withItems: things) {
+            airdrop.perform(withItems: things)
+        } else if let mail = NSSharingService(named: .composeMessage) {
+            mail.perform(withItems: things)
+        }
+    }
+
     @Published private(set) var items: [ShelfEntry] = []
     @Published private(set) var thumbnails: [UUID: NSImage] = [:]
     @Published var selection: Set<UUID> = []
@@ -3375,6 +3427,273 @@ final class MicMonitor: ObservableObject {
 
 /// The hinge sensor in recent MacBooks: an HID device Apple doesn't document, which reports
 /// the lid angle in degrees. Read twice a second, only while something needs it.
+// MARK: - Launcher: favorite sites, apps and Shortcuts, and quick buttons
+
+struct LaunchItem: Codable, Hashable, Identifiable {
+    enum Kind: String, Codable { case site, app, shortcut }
+    var id = UUID()
+    var kind: Kind
+    var target: String   // https URL, app path, or the Shortcut's name
+    var title: String
+}
+
+final class Launcher: ObservableObject {
+    static let shared = Launcher()
+    static let maxTiles = 8, maxShortcuts = 6
+
+    @Published private(set) var items: [LaunchItem] = []
+    @Published private(set) var icons: [String: NSImage] = [:]   // by target
+    @Published private(set) var glows: [String: Color] = [:]
+    /// Keeping the Mac awake until then (.distantFuture: until turned off).
+    @Published private(set) var awakeUntil: Date?
+    private var assertion: IOPMAssertionID = 0
+    private var awakeEnd: Timer?
+
+    var tiles: [LaunchItem] { items.filter { $0.kind != .shortcut } }
+    var shortcuts: [LaunchItem] { items.filter { $0.kind == .shortcut } }
+
+    private static let iconDir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/NotchUser/Icons", isDirectory: true)
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: "launcher"), let saved = try? JSONDecoder().decode([LaunchItem].self, from: data) {
+            items = saved
+        }
+        items.forEach(loadIcon)
+    }
+
+    private func save() { UserDefaults.standard.set(try? JSONEncoder().encode(items), forKey: "launcher") }
+
+    // MARK: Editing
+
+    /// "github.com", "https://github.com/me": only web addresses; nil when it isn't one.
+    static func siteURL(_ text: String) -> URL? {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !t.contains("://") { t = "https://" + t }
+        guard let u = URL(string: t), ["https", "http"].contains(u.scheme?.lowercased() ?? ""),
+              let host = u.host, host.contains(".") || host == "localhost" else { return nil }
+        return u
+    }
+
+    @discardableResult
+    func addSite(_ text: String) -> Bool {
+        guard tiles.count < Self.maxTiles, let u = Self.siteURL(text), !items.contains(where: { $0.target == u.absoluteString }) else { return false }
+        var name = u.host ?? u.absoluteString
+        if name.hasPrefix("www.") { name.removeFirst(4) }
+        // "github.com" → "Github": the label under the icon is short.
+        let label = name.split(separator: ".").first.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? name
+        add(LaunchItem(kind: .site, target: u.absoluteString, title: label))
+        return true
+    }
+
+    func addApp(_ url: URL) {
+        guard tiles.count < Self.maxTiles, !items.contains(where: { $0.target == url.path }) else { return }
+        let name = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        add(LaunchItem(kind: .app, target: url.path, title: name))
+    }
+
+    func addShortcut(_ name: String) {
+        guard shortcuts.count < Self.maxShortcuts, !shortcuts.contains(where: { $0.target == name }) else { return }
+        add(LaunchItem(kind: .shortcut, target: name, title: name))
+    }
+
+    private func add(_ item: LaunchItem) {
+        items.append(item)
+        save()
+        loadIcon(item)
+    }
+
+    func remove(_ item: LaunchItem) {
+        items.removeAll { $0.id == item.id }
+        save()
+    }
+
+    func move(_ item: LaunchItem, by step: Int) {
+        guard let i = items.firstIndex(of: item) else { return }
+        let j = i + step
+        guard items.indices.contains(j) else { return }
+        items.swapAt(i, j)
+        save()
+    }
+
+    // MARK: Opening
+
+    func open(_ item: LaunchItem) {
+        switch item.kind {
+        case .site:
+            if let u = URL(string: item.target) { NSWorkspace.shared.open(u) }
+        case .app:
+            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: item.target), configuration: .init())
+        case .shortcut:
+            // `shortcuts run` with a name that's gone (renamed or deleted) never returns: check first.
+            Self.availableShortcuts { [weak self] names in
+                guard let self else { return }
+                guard names.contains(item.target) else {
+                    self.onEvent?(.init(icon: "exclamationmark.triangle.fill", title: L("shortcutMissing"), detail: item.title, ok: false))
+                    return
+                }
+                self.run(item)
+            }
+        }
+    }
+
+    private func run(_ item: LaunchItem) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")
+            p.arguments = ["run", item.target]
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            // It runs on its own, maybe for a while: say it started, and say so if it failed
+            // (renamed or deleted in the Shortcuts app).
+            p.terminationHandler = { [weak self] done in
+                guard done.terminationStatus != 0 else { return }
+                DispatchQueue.main.async {
+                    self?.onEvent?(.init(icon: "exclamationmark.triangle.fill", title: L("shortcutFailed"), detail: item.title, ok: false))
+                }
+            }
+            do {
+                try p.run()
+                onEvent?(.init(icon: "square.stack.3d.up.fill", title: L("shortcutRunning"), detail: item.title, ok: true))
+            } catch {
+                onEvent?(.init(icon: "exclamationmark.triangle.fill", title: L("shortcutFailed"), detail: item.title, ok: false))
+            }
+    }
+
+    /// What the notch says about a button (a Shortcut started, keeping awake).
+    var onEvent: ((NotchState.Toast) -> Void)?
+
+    /// The Shortcuts the user has, for picking which become buttons.
+    static func availableShortcuts(_ done: @escaping ([String]) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let p = Process(), out = Pipe()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")
+            p.arguments = ["list"]
+            p.standardOutput = out
+            p.standardError = FileHandle.nullDevice
+            var names: [String] = []
+            if (try? p.run()) != nil {
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                names = String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init).filter { !$0.isEmpty }.sorted()
+            }
+            DispatchQueue.main.async { done(names) }
+        }
+    }
+
+    // MARK: Icons
+
+    private static func cacheURL(_ target: String) -> URL {
+        let name = SHA256.hash(data: Data(target.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+        return iconDir.appendingPathComponent(name + ".png")
+    }
+
+    private func loadIcon(_ item: LaunchItem) {
+        let target = item.target
+        guard icons[target] == nil else { return }
+        switch item.kind {
+        case .shortcut:
+            return
+        case .app:
+            // Safari in /Applications is a link to the system's copy: its icon would carry the alias arrow.
+            set(NSWorkspace.shared.icon(forFile: URL(fileURLWithPath: target).resolvingSymlinksInPath().path), for: target)
+        case .site:
+            if let cached = NSImage(contentsOf: Self.cacheURL(target)) { set(cached, for: target); return }
+            guard let u = URL(string: target) else { return }
+            DispatchQueue.global(qos: .utility).async {
+                guard let img = Self.fetchSiteIcon(u) else { return }
+                try? FileManager.default.createDirectory(at: Self.iconDir, withIntermediateDirectories: true)
+                if let tiff = img.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: Self.cacheURL(target))
+                }
+                DispatchQueue.main.async { self.set(img, for: target) }
+            }
+        }
+    }
+
+    private func set(_ img: NSImage, for target: String) {
+        icons[target] = img
+        glows[target] = averageColor(img)
+    }
+
+    /// The big icon a site makes for iPhones (180 px), else the largest one its page names, else
+    /// /favicon.ico. Runs off the main thread; only https, and only small images.
+    private static func fetchSiteIcon(_ site: URL) -> NSImage? {
+        guard let host = site.host, let root = URL(string: "https://\(host)") else { return nil }
+        func image(_ u: URL) -> NSImage? {
+            guard u.scheme == "https", let data = get(u), data.count < 2_000_000, let img = NSImage(data: data),
+                  let rep = img.representations.max(by: { $0.pixelsWide < $1.pixelsWide }), rep.pixelsWide >= 48 else { return nil }
+            return img
+        }
+        for path in ["/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"] {
+            if let img = image(root.appendingPathComponent(path)) { return img }
+        }
+        if let html = get(root).map({ String(decoding: $0.prefix(300_000), as: UTF8.self) }) {
+            // <link rel="apple-touch-icon" href="…"> or <link rel="icon" sizes="192x192" href="…">: biggest first.
+            let re = try? NSRegularExpression(pattern: #"<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]*>"#, options: .caseInsensitive)
+            let tags = re?.matches(in: html, range: NSRange(html.startIndex..., in: html)).compactMap { Range($0.range, in: html).map { String(html[$0]) } } ?? []
+            func attr(_ tag: String, _ name: String) -> String? {
+                guard let r = tag.range(of: name + #"=["']([^"']+)["']"#, options: [.regularExpression, .caseInsensitive]) else { return nil }
+                return String(tag[r].dropFirst(name.count + 2).dropLast())
+            }
+            let ranked = tags.sorted {
+                let a = Int(attr($0, "sizes")?.split(separator: "x").first ?? "") ?? ($0.contains("apple") ? 180 : 0)
+                let b = Int(attr($1, "sizes")?.split(separator: "x").first ?? "") ?? ($1.contains("apple") ? 180 : 0)
+                return a > b
+            }
+            for tag in ranked {
+                if let href = attr(tag, "href"), !href.hasSuffix(".svg"), let u = URL(string: href, relativeTo: root)?.absoluteURL,
+                   let img = image(u) { return img }
+            }
+        }
+        if let data = get(root.appendingPathComponent("/favicon.ico")), let img = NSImage(data: data) { return img }
+        return nil
+    }
+
+    private static func get(_ u: URL) -> Data? {
+        var req = URLRequest(url: u, timeoutInterval: 8)
+        req.setValue("Mozilla/5.0 (Macintosh) NotchUser", forHTTPHeaderField: "User-Agent")
+        let done = DispatchSemaphore(value: 0)
+        var result: Data?
+        URLSession.shared.dataTask(with: req) { data, response, _ in
+            if (response as? HTTPURLResponse)?.statusCode == 200 { result = data }
+            done.signal()
+        }.resume()
+        _ = done.wait(timeout: .now() + 10)
+        return result
+    }
+
+    // MARK: Quick buttons
+
+    /// nil: until turned off. Keeps the screen on (and so the Mac), like the caffeinate command.
+    func keepAwake(for seconds: TimeInterval?) {
+        stopAwake()
+        guard IOPMAssertionCreateWithName("PreventUserIdleDisplaySleep" as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                                          "NotchUser: keep awake" as CFString, &assertion) == kIOReturnSuccess else { return }
+        awakeUntil = seconds.map { Date().addingTimeInterval($0) } ?? .distantFuture
+        onEvent?(.init(icon: "cup.and.heat.waves.fill", title: L("keepAwakeOn"), detail: seconds.map { FocoTimer.spoken($0) } ?? L("untilOff"), ok: true))
+        if let seconds {
+            let t = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in self?.stopAwake() }
+            RunLoop.main.add(t, forMode: .common)
+            awakeEnd = t
+        }
+    }
+
+    func stopAwake() {
+        awakeEnd?.invalidate()
+        awakeEnd = nil
+        if assertion != 0 { IOPMAssertionRelease(assertion); assertion = 0 }
+        if awakeUntil != nil { awakeUntil = nil }
+    }
+
+    static func lockScreen() {
+        // The same as ⌃⌘Q.
+        guard let h = dlopen("/System/Library/PrivateFrameworks/login.framework/login", RTLD_LAZY),
+              let f = dlsym(h, "SACLockScreenImmediate") else { return }
+        typealias Lock = @convention(c) () -> Int32
+        _ = unsafeBitCast(f, to: Lock.self)()
+    }
+}
+
 /// The charger going in or out, a low battery and a full one, each as a short note in the notch.
 /// Nothing is polled: macOS calls back when the power source changes.
 final class Battery {
@@ -4020,6 +4339,15 @@ final class NotchState: ObservableObject {
     // Set by AppDelegate every tick; they decide what the expanded notch contains.
     @Published var showMedia = false
     @Published var showShelf = false
+    @Published var showLauncher = false
+    @Published var launcherTiles = false
+    static let launcherTileRow: CGFloat = 44, launcherButtonRow: CGFloat = 28
+    /// On a page of their own the icons have room to be bigger.
+    static let launcherBigTileRow: CGFloat = 60
+    var launcherHeight: CGFloat { launcherHeight(big: false) }
+    func launcherHeight(big: Bool) -> CGFloat {
+        (launcherTiles ? (big ? Self.launcherBigTileRow : Self.launcherTileRow) + 6 : 0) + Self.launcherButtonRow
+    }
     @Published var showFocus = false
     @Published var activityRows = 0      // live activities listed at the top
     @Published var question: Activity?   // an agent's multiple-choice question takes over the notch
@@ -4112,6 +4440,13 @@ final class NotchState: ObservableObject {
         np.hasMedia || !shelf.isEmpty || foco.session != nil || !activities.items.isEmpty || mic.shown
     }
 
+    /// From the top of the open notch to where the launcher starts (it's always last).
+    var launcherTop: CGFloat {
+        if paged { return currentPage == .launcher ? notchH + 4 : .greatestFiniteMagnitude }
+        let above = stackedSections.dropLast()
+        return notchH + 4 + above.reduce(0, +) + Self.separator * CGFloat(above.count)
+    }
+
     /// From the top of the open notch to where the shelf starts (sideways swipes there scroll the shelf).
     var shelfTop: CGFloat {
         var y = notchH + 4
@@ -4123,7 +4458,7 @@ final class NotchState: ObservableObject {
     }
 
     // Pages: music (with Foco), shelf, activities, one at a time, when stacking them gets too tall.
-    enum Page: String { case main, shelf, activities }
+    enum Page: String { case main, shelf, activities, launcher }
     @Published var page = Page.main
     /// Which way the last page change went, so the new page slides in from that side.
     var pageForward = true
@@ -4135,6 +4470,7 @@ final class NotchState: ObservableObject {
         if showFocus || showMedia { p.append(.main) }
         if showShelf { p.append(.shelf) }
         if activityRows > 0 { p.append(.activities) }
+        if showLauncher { p.append(.launcher) }
         return p
     }
     var paged: Bool {
@@ -4149,6 +4485,7 @@ final class NotchState: ObservableObject {
             return (showFocus ? Self.focusHeight : 0) + (showMedia ? Self.mediaHeight : 0) + (showFocus && showMedia ? Self.separator : 0)
         case .shelf: return Self.shelfHeight
         case .activities: return Self.activityHeight * CGFloat(activityRows)
+        case .launcher: return launcherHeight(big: true)
         }
     }
 
@@ -4165,12 +4502,15 @@ final class NotchState: ObservableObject {
         let s = stackedSections
         return s.reduce(0, +) + Self.separator * CGFloat(max(0, s.count - 1))
     }
-    private var stackedSections: [CGFloat] {
+    var stackedSections: [CGFloat] {
         var sections: [CGFloat] = []
         if activityRows > 0 { sections.append(Self.activityHeight * CGFloat(activityRows)) }
         if showFocus { sections.append(Self.focusHeight) }
         if showMedia { sections.append(Self.mediaHeight) }
         if showShelf { sections.append(Self.shelfHeight) }
+        // With nothing else, the "nothing playing" note sits above the buttons.
+        if sections.isEmpty && showLauncher { sections.append(Self.emptyHeight) }
+        if showLauncher { sections.append(launcherHeight) }
         return sections
     }
 
@@ -4181,18 +4521,14 @@ final class NotchState: ObservableObject {
         if let r = result { return CGSize(width: Self.width, height: notchH + chrome + Self.resultHeight(r)) }
         if let p = plan { return CGSize(width: Self.width, height: notchH + chrome + Self.planHeight(p)) }
         if paged { return CGSize(width: Self.width, height: notchH + chrome + pagedHeight + Self.dotsHeight) }
-        var sections: [CGFloat] = []
-        if activityRows > 0 { sections.append(Self.activityHeight * CGFloat(activityRows)) }
-        if showFocus { sections.append(Self.focusHeight) }
-        if showMedia { sections.append(Self.mediaHeight) }
-        if showShelf { sections.append(Self.shelfHeight) }
+        var sections = stackedSections
         if sections.isEmpty { sections.append(Self.emptyHeight) }
         let h = notchH + chrome + sections.reduce(0, +) + Self.separator * CGFloat(sections.count - 1)
         return CGSize(width: Self.width, height: h)
     }
     var maxExpandedHeight: CGFloat {
         notchH + chrome + max(Self.mirrorHeight, Self.activityHeight * CGFloat(Self.maxActivities)
-            + Self.focusHeight + Self.mediaHeight + Self.shelfHeight + Self.separator * 3)
+            + Self.focusHeight + Self.mediaHeight + Self.shelfHeight + Self.launcherBigTileRow + 6 + Self.launcherButtonRow + Self.separator * 4)
     }
     static let maxExpandedWidth: CGFloat = 560
 
@@ -5832,6 +6168,17 @@ enum NotchMenu {
                 m.addItem(timer)
             }
         }
+        let launcher = Launcher.shared
+        if launcher.awakeUntil != nil {
+            m.addItem(item(L("keepAwakeStop"), "cup.and.heat.waves.fill") { launcher.stopAwake() })
+        } else {
+            m.addItem(submenu(L("keepAwake"), "cup.and.heat.waves") { sub in
+                for hours in [1, 2, 4] {
+                    sub.addItem(item(L("forHours", hours), nil) { launcher.keepAwake(for: Double(hours) * 3600) })
+                }
+                sub.addItem(item(L("untilOff"), nil) { launcher.keepAwake(for: nil) })
+            })
+        }
         if Activities.current?.items.contains(where: { $0.hasPlan && $0.state == .running }) == true {
             m.addItem(item(L("seePlan"), "list.bullet") {
                 if let url = URL(string: "notchuser://plan") { NSWorkspace.shared.open(url) }
@@ -5905,6 +6252,7 @@ enum NotchMenu {
             sub.addItem(item(L("addonLyrics"), "quote.bubble", on: settings.lyricsEnabled) { settings.lyricsEnabled.toggle() })
             sub.addItem(item(L("headphonesHQ"), "headphones", on: settings.keepHeadphonesHQ) { settings.keepHeadphonesHQ.toggle() })
             sub.addItem(item(L("addonMic"), "mic", on: settings.micEnabled) { settings.micEnabled.toggle() })
+            sub.addItem(item(L("addonLauncher"), "square.grid.2x2", on: settings.launcherEnabled) { settings.launcherEnabled.toggle() })
             sub.addItem(.sectionHeader(title: L("groupSystem")))
             sub.addItem(item(L("addonGestures"), "hand.draw", on: settings.gesturesEnabled) { settings.gesturesEnabled.toggle() })
             sub.addItem(item(L("addonOpenKey"), "keyboard", on: settings.openKeyEnabled) { settings.openKeyEnabled.toggle() })
@@ -5953,6 +6301,168 @@ enum NotchMenu {
         i.keyEquivalent = key
         if !key.isEmpty { i.keyEquivalentModifierMask = modifiers }
         return i
+    }
+}
+
+/// Favorite sites and apps as glossy tiles, and a row of quick buttons below them.
+struct LauncherView: View {
+    @ObservedObject var launcher: Launcher
+    var accent: Color
+    /// On its own page (bigger icons) rather than under everything else.
+    var big = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Spacer(minLength: 0)
+            if !launcher.tiles.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(launcher.tiles.enumerated()), id: \.element.id) { n, item in
+                        LaunchTile(item: item, icon: launcher.icons[item.target], glow: launcher.glows[item.target] ?? accent, index: n,
+                                   size: big ? 46 : 34) {
+                            launcher.open(item)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: big ? NotchState.launcherBigTileRow : NotchState.launcherTileRow)
+            }
+            // Centered under the notch; a long row (many Shortcuts) scrolls instead.
+            GeometryReader { g in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    awakeButton
+                    QuickChip(symbol: "lock.fill", title: nil, help: L("lockScreen")) { Launcher.lockScreen() }
+                    QuickChip(symbol: "pencil", title: nil, help: L("quickNote")) { QuickNote.shared.show() }
+                    ForEach(launcher.shortcuts) { item in
+                        QuickChip(symbol: "square.stack.3d.up.fill", title: item.title, help: L("runShortcut", item.title)) { launcher.open(item) }
+                    }
+                    QuickChip(symbol: "plus", title: launcher.items.isEmpty ? L("launcherAdd") : nil, help: L("launcherAdd")) {
+                        SettingsWindow.shared.show(welcome: false, pane: .addons)
+                    }
+                }
+                .frame(minWidth: g.size.width)
+            }
+            }
+            .frame(height: NotchState.launcherButtonRow)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var awakeButton: some View {
+        let until = launcher.awakeUntil
+        return TimelineView(.periodic(from: .now, by: 60)) { ctx in
+            let left = until.map { $0 == .distantFuture ? "∞" : FocoTimer.spoken(max(60, $0.timeIntervalSince(ctx.date))) }
+            QuickChip(symbol: "cup.and.heat.waves.fill", title: left, help: L(until == nil ? "keepAwake" : "keepAwakeStop"),
+                      on: until != nil, tint: accent) {
+                until == nil ? launcher.keepAwake(for: nil) : launcher.stopAwake()
+            }
+        }
+    }
+}
+
+/// A site or app: its icon raised off the notch, tilting toward the mouse, with a glow in its own color.
+struct LaunchTile: View {
+    var item: LaunchItem
+    var icon: NSImage?
+    var glow: Color
+    /// Its place in the row: the icons come in one after another.
+    var index = 0
+    var size: CGFloat = 34
+    var open: () -> Void
+    @StateObject private var hover = Box(false)
+    @StateObject private var shown = Box(false)
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack {
+                // The color it casts on the notch.
+                RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                    .fill(glow)
+                    .frame(width: size * 0.9, height: size * 0.9)
+                    .blur(radius: hover.value ? 13 : 8)
+                    .opacity(hover.value ? 0.9 : 0.32)
+                    .scaleEffect(hover.value ? 1.25 : 1)
+                    .offset(y: hover.value ? 6 : 4)
+                face
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
+                    // Light from above: a sheen on the top half and a thin bright rim.
+                    .overlay(
+                        LinearGradient(colors: [.white.opacity(0.32), .white.opacity(0.04), .clear], startPoint: .top, endPoint: .center)
+                            .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
+                            .allowsHitTesting(false)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom),
+                                          lineWidth: 0.8)
+                    )
+                    .shadow(color: .black.opacity(hover.value ? 0.6 : 0.5), radius: hover.value ? 8 : 5, y: hover.value ? 7 : 4)
+                    .modifier(Tilt(enabled: true, size: size))
+                    // Under the mouse it rises off the notch.
+                    .offset(y: hover.value ? -3 : 0)
+            }
+            .frame(width: size + 14, height: size + 8)
+        }
+        .scaleEffect(shown.value ? 1 : 0.4)
+        .opacity(shown.value ? 1 : 0)
+        .offset(y: shown.value ? 0 : 8)
+        .onAppear {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.62).delay(0.05 + Double(index) * 0.045)) { shown.value = true }
+        }
+        .onDisappear { shown.value = false }
+        .contentShape(Rectangle())
+        .onHover { h in withAnimation(.easeOut(duration: 0.2)) { hover.value = h } }
+        .onTapGesture(perform: open)
+        // No label under it: the name shows on hover.
+        .help(item.title)
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: hover.value)
+    }
+
+    @ViewBuilder private var face: some View {
+        if let icon, item.kind == .app {
+            // App icons bring their own shape and shadow.
+            Image(nsImage: icon).resizable().interpolation(.high).scaleEffect(1.18)
+        } else if let icon {
+            ZStack {
+                Color.white
+                Image(nsImage: icon).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+            }
+        } else {
+            // No icon yet (or the site has none): its first letter.
+            ZStack {
+                LinearGradient(colors: [glow, glow.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                Text(item.title.prefix(1).uppercased()).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(.white)
+            }
+        }
+    }
+}
+
+/// A small capsule button for the quick row.
+struct QuickChip: View {
+    var symbol: String
+    var title: String?
+    var help: String
+    var on = false
+    var tint: Color = .white
+    var action: () -> Void
+    @StateObject private var hover = Box(false)
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                if let title { Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1) }
+            }
+            .foregroundColor(on ? .black : .white.opacity(hover.value ? 0.95 : 0.75))
+            .padding(.horizontal, title == nil ? 0 : 10)
+            .frame(minWidth: 30, minHeight: 26)
+            .background(Capsule().fill(on ? AnyShapeStyle(tint) : AnyShapeStyle(Color.white.opacity(hover.value ? 0.16 : 0.09))))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle(hover: hover.value))
+        .onHover { hover.value = $0 }
+        .help(help)
     }
 }
 
@@ -6699,6 +7209,11 @@ struct NotchView: View {
                         }
                         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: shelf.items)
                     }
+                    // AirDrop (or Messages, Mail…) for the selection, or everything.
+                    ControlButton(symbol: "square.and.arrow.up", size: 12, color: .white.opacity(0.45), box: 30) {
+                        shelf.share(shelf.selection.isEmpty ? shelf.items : shelf.items.filter { shelf.selection.contains($0.id) })
+                    }
+                    .help(L("shareShelf"))
                     // With a selection the trash removes just that, otherwise everything.
                     ControlButton(symbol: "trash", size: 12, color: .white.opacity(0.45), box: 30) {
                         withAnimation(.spring(response: 0.35)) {
@@ -6870,7 +7385,7 @@ struct NotchView: View {
     /// Each section slides down after the one above it.
     private func rise(_ index: Int) -> Rise {
         let p = profile
-        let shown = [ui.activityRows > 0, ui.showFocus, ui.showMedia, ui.showShelf].prefix(index).filter { $0 }.count
+        let shown = [ui.activityRows > 0, ui.showFocus, ui.showMedia, ui.showShelf, ui.showLauncher].prefix(index).filter { $0 }.count
         return Rise(delay: p.contentDelay + p.stagger * Double(shown), enabled: p.stagger > 0)
     }
 
@@ -6934,6 +7449,7 @@ struct NotchView: View {
             }
         case .shelf: shelfSection
         case .activities: activitySection
+        case .launcher: LauncherView(launcher: Launcher.shared, accent: np.accent, big: true).frame(height: ui.launcherHeight(big: true))
         }
     }
 
@@ -6958,6 +7474,12 @@ struct NotchView: View {
             if ui.showShelf {
                 if ui.activityRows > 0 || ui.showFocus || ui.showMedia { hairline }
                 shelfSection.modifier(rise(3))
+            }
+            if ui.showLauncher {
+                hairline
+                LauncherView(launcher: Launcher.shared, accent: np.accent)
+                    .frame(height: ui.launcherHeight)
+                    .modifier(rise(4))
             }
             if ui.isEmpty {
                 VStack(spacing: 4) {
@@ -7133,6 +7655,88 @@ struct AddOnsList: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// Which sites, apps and Shortcuts sit at the bottom of the open notch.
+struct LauncherSettings: View {
+    @ObservedObject var settings = Settings.shared
+    @ObservedObject var launcher = Launcher.shared
+    @StateObject private var site = Box("")
+    @StateObject private var bad = Box(false)
+    @StateObject private var available = Box<[String]>([])
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(L("launcherShow"), isOn: $settings.launcherEnabled).toggleStyle(.switch).controlSize(.small)
+            Text(L("launcherHint")).font(.system(size: 10.5)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+            if settings.launcherEnabled {
+                ForEach(launcher.items) { item in
+                    HStack(spacing: 8) {
+                        Group {
+                            if let img = launcher.icons[item.target] {
+                                Image(nsImage: img).resizable().interpolation(.high)
+                            } else {
+                                Image(systemName: item.kind == .shortcut ? "square.stack.3d.up.fill" : "globe").foregroundColor(.secondary)
+                            }
+                        }
+                        .frame(width: 18, height: 18)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(item.title).font(.system(size: 12))
+                            Text(item.kind == .site ? item.target : L("kind." + item.kind.rawValue))
+                                .font(.system(size: 10)).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button { launcher.move(item, by: -1) } label: { Image(systemName: "chevron.up") }
+                            .buttonStyle(.borderless).disabled(launcher.items.first == item)
+                        Button { launcher.move(item, by: 1) } label: { Image(systemName: "chevron.down") }
+                            .buttonStyle(.borderless).disabled(launcher.items.last == item)
+                        Button { launcher.remove(item) } label: { Image(systemName: "minus.circle.fill").foregroundColor(.secondary) }
+                            .buttonStyle(.borderless).help(L("remove"))
+                    }
+                }
+                HStack(spacing: 6) {
+                    TextField(L("launcherSitePlaceholder"), text: $site.value)
+                        .textFieldStyle(.roundedBorder).controlSize(.small)
+                        .onSubmit(addSite)
+                    Button(L("add"), action: addSite).controlSize(.small)
+                        .disabled(site.value.isEmpty || launcher.tiles.count >= Launcher.maxTiles)
+                }
+                if bad.value {
+                    Text(L("launcherBadSite")).font(.system(size: 10.5)).foregroundColor(.red)
+                }
+                HStack(spacing: 8) {
+                    Button(L("launcherAddApp")) { pickApp() }
+                        .controlSize(.small).disabled(launcher.tiles.count >= Launcher.maxTiles)
+                    Menu(L("launcherAddShortcut")) {
+                        if available.value.isEmpty { Text(L("launcherNoShortcuts")) }
+                        ForEach(available.value, id: \.self) { name in
+                            Button(name) { launcher.addShortcut(name) }
+                                .disabled(launcher.shortcuts.contains { $0.target == name })
+                        }
+                    }
+                    .controlSize(.small).fixedSize()
+                    .disabled(launcher.shortcuts.count >= Launcher.maxShortcuts)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { Launcher.availableShortcuts { available.value = $0 } }
+    }
+
+    private func addSite() {
+        bad.value = !launcher.addSite(site.value)
+        if !bad.value { site.value = "" }
+    }
+
+    private func pickApp() {
+        let panel = NSOpenPanel()
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        panel.urls.forEach(launcher.addApp)
     }
 }
 
@@ -7788,6 +8392,7 @@ struct SettingsView: View {
                 glassSection(L("motion")) { MotionSettings() }
                 glassSection(L("size")) { SizeSettings() }
             case .addons:
+                glassSection(L("addonLauncher")) { LauncherSettings() }
                 glassSection("") { AddOnsList(extras: true) }
                 Text(L("addonsSub"))
                     .font(.system(size: 11))
@@ -8017,6 +8622,95 @@ struct OnboardingView: View {
 }
 
 /// Centered, translucent window: the walkthrough on first launch, Settings afterwards.
+/// The pencil in the quick row: a small note under the notch, kept as you type, ready to copy or
+/// hand to the Notes app. One note, not a notes app.
+final class QuickNote: NSObject, NSWindowDelegate {
+    static let shared = QuickNote()
+    private var window: NSPanel?
+    final class Model: ObservableObject {
+        @Published var text = UserDefaults.standard.string(forKey: "quickNote") ?? "" {
+            didSet { UserDefaults.standard.set(text, forKey: "quickNote") }
+        }
+    }
+    let model = Model()
+
+    func show() {
+        if window == nil {
+            let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 240),
+                            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .utilityWindow], backing: .buffered, defer: false)
+            w.title = L("quickNote")
+            w.titlebarAppearsTransparent = true
+            w.isMovableByWindowBackground = true
+            w.level = .floating
+            w.isReleasedWhenClosed = false
+            w.hidesOnDeactivate = false
+            w.appearance = NSAppearance(named: .darkAqua)
+            w.minSize = NSSize(width: 280, height: 160)
+            w.delegate = self
+            w.contentViewController = NSHostingController(rootView: QuickNoteView(model: model) { [weak w] in w?.close() })
+            w.setContentSize(NSSize(width: 360, height: 240))
+            // Just under the notch, the first time; then wherever it was left.
+            if !w.setFrameUsingName("QuickNote"), let s = NSScreen.screens.first(where: { $0.hasNotch }) ?? NSScreen.main {
+                w.setFrameTopLeftPoint(NSPoint(x: s.frame.midX - 180, y: s.visibleFrame.maxY - 8))
+            }
+            w.setFrameAutosaveName("QuickNote")
+            window = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// A new note in Apple's Notes app with this text (Notes asks for permission the first time).
+    static func sendToNotes(_ text: String) {
+        let body = text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: "\n", with: "<br>")
+        let escaped = body.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        DispatchQueue.global(qos: .userInitiated).async {
+            var err: NSDictionary?
+            NSAppleScript(source: "tell application \"Notes\" to make new note with properties {body:\"\(escaped)\"}")?.executeAndReturnError(&err)
+            if err == nil, let notes = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Notes") {
+                NSWorkspace.shared.openApplication(at: notes, configuration: .init())
+            }
+        }
+    }
+}
+
+struct QuickNoteView: View {
+    @ObservedObject var model: QuickNote.Model
+    var close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextEditor(text: $model.text)
+                .font(.system(size: 13))
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+                .overlay(alignment: .topLeading) {
+                    if model.text.isEmpty {
+                        Text(L("quickNoteHint")).font(.system(size: 13)).foregroundColor(.secondary.opacity(0.7))
+                            .padding(.horizontal, 11).padding(.vertical, 6).allowsHitTesting(false)
+                    }
+                }
+            HStack(spacing: 8) {
+                Button { model.text = "" } label: { Image(systemName: "trash") }
+                    .help(L("clear")).disabled(model.text.isEmpty)
+                Spacer()
+                Button(L("copy")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(model.text, forType: .string)
+                }
+                .disabled(model.text.isEmpty)
+                Button(L("toNotes")) { QuickNote.sendToNotes(model.text) }.disabled(model.text.isEmpty)
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 4)
+        .background(VisualEffect(material: .hudWindow).ignoresSafeArea())
+        .onExitCommand(perform: close)
+    }
+}
+
 final class SettingsWindow: NSObject, NSWindowDelegate {
     static let shared = SettingsWindow()
     private var window: NSWindow?
@@ -8213,6 +8907,8 @@ final class NotchController {
             // Sideways over the shelf scrolls the shelf.
             let fromTop = panel.frame.height - e.locationInWindow.y
             guard np.hasMedia, !ui.showShelf || !ui.expanded || fromTop < ui.shelfTop * ui.scale else { return false }
+            // …and over the quick buttons, their row.
+            guard !ui.expanded || !ui.showLauncher || fromTop < ui.launcherTop * ui.scale else { return false }
             guard e.hasPreciseScrollingDeltas, !swiped, !coasting else { return true }
             swipe += right
             if abs(swipe) > 70 {
@@ -8261,6 +8957,10 @@ final class NotchController {
         if ui.showMedia != showMedia { ui.showMedia = showMedia }
         if ui.showShelf != showShelf { ui.showShelf = showShelf }
         if ui.showFocus != showFocus { ui.showFocus = showFocus }
+        let showLauncher = Settings.shared.launcherEnabled && !fileDrag
+        if ui.showLauncher != showLauncher { ui.showLauncher = showLauncher }
+        let launcherTiles = !Launcher.shared.tiles.isEmpty
+        if ui.launcherTiles != launcherTiles { ui.launcherTiles = launcherTiles }
         updateLyric(fileDrag: fileDrag)
         let question = fileDrag ? nil : activities.question
         if ui.question != question { ui.question = question }
@@ -8384,6 +9084,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Study <-> break switches peek open like a notification.
         foco.onPhaseChange = { [weak self] in self?.peek(4) }
         Activities.current = activities
+        Launcher.shared.onEvent = { [weak self] toast in
+            self?.showToast(toast, seconds: 2.4)
+            if !toast.ok { Haptics.play(.failure) }
+        }
         Updates.shared.onChecked = { [weak self] found in
             switch found {
             case true?: self?.peek(5)
@@ -8721,6 +9425,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let seconds = q["seconds"].flatMap(Double.init), seconds >= 1 else { return }
             foco.startOwn(seconds: seconds, label: q["title"] ?? "")
             peek(3)
+        case "awake":
+            // notchuser://awake?hours=2, ?minutes=30, nothing for until turned off, ?off=1 to stop.
+            if q["off"] != nil { Launcher.shared.stopAwake(); return }
+            let seconds = q["hours"].flatMap(Double.init).map { $0 * 3600 } ?? q["minutes"].flatMap(Double.init).map { $0 * 60 }
+            Launcher.shared.keepAwake(for: seconds.map { min(max($0, 60), 24 * 3600) })
         case "plan":
             // Opens the plan of the agent that's working (the first one that keeps a plan).
             guard let c = mainController, let a = activities.items.first(where: { $0.hasPlan && $0.state == .running }) else { return }

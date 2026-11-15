@@ -46,6 +46,13 @@ The notch is dead space in the middle of your menu bar. NotchUser turns it into 
 - **A shelf for everything in transit.** Drop files, links or text on it, drag them out wherever they go.
 - **Light enough to forget.** About **0.1% CPU and 30–50 MB** with music playing. The animations run in Core Animation, inside macOS.
 
+## New in 1.10
+
+- **Your sites and apps in the notch.** Up to 8 favorites as glossy icons that tilt toward the mouse and glow in their own color. They're bigger on a page of their own and compact when everything is stacked. Add them in Settings → Add-ons.
+- **Quick buttons.** Keep the Mac awake (until you stop it, or 1, 2 or 4 hours from the menu), lock the screen, a quick note under the notch, and up to 6 of your own Shortcuts.
+- **AirDrop from the shelf.** One button sends what's on it.
+- **A tidier menu**, and a timer with "Other…" and "Again".
+
 ## New in 1.9
 
 - **See what the agent is doing.** Click a running Claude Code activity and the notch shows its plan: what's done, the step it's on, and what's left. The row itself reads "2/5 · Running the tests".
