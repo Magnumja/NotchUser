@@ -9429,6 +9429,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // notchuser://awake?hours=2, ?minutes=30, nothing for until turned off, ?off=1 to stop.
             if q["off"] != nil { Launcher.shared.stopAwake(); return }
             let seconds = q["hours"].flatMap(Double.init).map { $0 * 3600 } ?? q["minutes"].flatMap(Double.init).map { $0 * 60 }
+            // "nan" or "inf" from a link would make a date that never comes: only real lengths.
+            if let s = seconds, !s.isFinite { return }
             Launcher.shared.keepAwake(for: seconds.map { min(max($0, 60), 24 * 3600) })
         case "plan":
             // Opens the plan of the agent that's working (the first one that keeps a plan).
