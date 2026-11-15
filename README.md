@@ -146,6 +146,7 @@ Requires **macOS 14 Sonoma or later**, Apple Silicon or Intel.
 
 - **No account, no analytics, no tracking.**
 - Network requests: the Spotify cover art (from Spotify); once a day, the latest version number from GitHub, to tell you when an update is out (turn it off in **Settings → General**), and the new version itself from GitHub if you click to install it; and, only if you turn lyrics on and open them, the song's title, artist and length to [LRCLIB](https://lrclib.net), a free lyrics database.
+- Sites you add to the notch: their icon, fetched once from the site itself and kept on your Mac. Only when a site turns the app away (LinkedIn, Crunchyroll…) is just its name sent to Google's or DuckDuckGo's icon service.
 - Agents and activities stay on your Mac: they talk to the notch through local files. Connecting an agent only adds NotchUser's hooks to its settings, after a backup. Private mode keeps your prompts and the agents' answers out of the notch.
 - Text recognition runs on your Mac and the image is deleted right away. Every permission is asked only by the feature that needs it.
 

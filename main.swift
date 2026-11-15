@@ -118,6 +118,10 @@ final class Settings: ObservableObject {
     @Published var eventEffects: Bool { didSet { d.set(eventEffects, forKey: "eventEffects") } }
     /// Keep what's asked of the agents and their answers out of the notch (also read by the agents' hooks).
     @Published var privateAgents: Bool { didSet { d.set(privateAgents, forKey: "privateAgents") } }
+    /// The music dips while an agent waits for you, and comes back once you answer.
+    @Published var duckForAgents: Bool { didSet { d.set(duckForAgents, forKey: "duckForAgents") } }
+    /// The agent's row says what it's doing this second ("Editing main.swift").
+    @Published var agentActions: Bool { didSet { d.set(agentActions, forKey: "agentActions") } }
     /// 0.6 (slow) ... 1.6 (snappy).
     @Published var motionSpeed: Double { didSet { d.set(motionSpeed, forKey: "motionSpeed") } }
     /// The closed notch leans toward the cursor as it gets close.
@@ -247,6 +251,8 @@ final class Settings: ObservableObject {
         roundness = d.object(forKey: "roundness") as? Double ?? 1
         eventEffects = d.object(forKey: "eventEffects") as? Bool ?? true
         privateAgents = d.bool(forKey: "privateAgents")
+        duckForAgents = d.object(forKey: "duckForAgents") as? Bool ?? true
+        agentActions = d.object(forKey: "agentActions") as? Bool ?? true
     }
 
     /// The motion actually used: Reduce Motion in Accessibility always wins.
@@ -293,15 +299,21 @@ enum Strings {
         "removeSelected": ["en": "Remove the %ld selected", "pt": "Tirar os %ld selecionados", "es": "Quitar los %ld seleccionados"],
         "planProgress": ["en": "%ld of %ld", "pt": "%ld de %ld", "es": "%ld de %ld"],
         "seePlan": ["en": "See the plan", "pt": "Ver o plano", "es": "Ver el plan"],
+        "dropShortcut": ["en": "Make a shortcut", "pt": "Criar atalho", "es": "Crear atajo"],
+        "shortcutRemoved": ["en": "Shortcut removed", "pt": "Atalho removido", "es": "Atajo eliminado"],
+        "shortcutExists": ["en": "Already in your shortcuts", "pt": "Já está nos atalhos", "es": "Ya está en tus atajos"],
+        "shortcutAdded": ["en": "Shortcut added", "pt": "Atalho adicionado", "es": "Atajo añadido"],
+        "shortcutsFull": ["en": "The shortcuts are full (8)", "pt": "Os atalhos estão cheios (8)", "es": "Los atajos están llenos (8)"],
+        "shortcutRefused": ["en": "Only a web link or an app can be a shortcut", "pt": "Só um link de site ou um app vira atalho", "es": "Solo un enlace web o una app puede ser un atajo"],
         "shortcutRunning": ["en": "Running Shortcut", "pt": "Rodando Atalho", "es": "Ejecutando Atajo"],
         "shortcutMissing": ["en": "That Shortcut is gone (renamed?)", "pt": "Esse Atalho não existe mais (renomeado?)", "es": "Ese Atajo ya no existe (¿renombrado?)"],
         "shortcutFailed": ["en": "The Shortcut didn't run", "pt": "O Atalho não rodou", "es": "El Atajo no se ejecutó"],
         "keepAwakeOn": ["en": "Keeping the Mac awake", "pt": "Mantendo o Mac acordado", "es": "Manteniendo el Mac despierto"],
         "addonLauncher": ["en": "Shortcuts and quick buttons", "pt": "Atalhos e botões rápidos", "es": "Atajos y botones rápidos"],
         "launcherShow": ["en": "Show at the bottom of the open notch", "pt": "Mostrar embaixo do notch aberto", "es": "Mostrar abajo del notch abierto"],
-        "launcherHint": ["en": "Up to 8 sites and apps as icons, and up to 6 of your Shortcuts as buttons, next to Keep awake, Lock and a quick note.",
-                         "pt": "Até 8 sites e apps como ícones, e até 6 dos seus Atalhos como botões, ao lado de Manter acordado, Bloquear e uma nota rápida.",
-                         "es": "Hasta 8 sitios y apps como iconos, y hasta 6 de tus Atajos como botones, junto a Mantener despierto, Bloquear y una nota rápida."],
+        "launcherHint": ["en": "Drag a link or an app onto the notch to add it; hold an icon and pull it away to remove it. Up to 8 sites and apps as icons, and up to 6 of your Shortcuts as buttons, next to Keep awake, Lock and a quick note.",
+                         "pt": "Arraste um link ou app para o notch para adicionar; segure um ícone e puxe para fora para tirar. Até 8 sites e apps como ícones, e até 6 dos seus Atalhos como botões, ao lado de Manter acordado, Bloquear e uma nota rápida.",
+                         "es": "Arrastra un enlace o una app al notch para añadirlo; mantén pulsado un icono y sácalo para quitarlo. Hasta 8 sitios y apps como iconos, y hasta 6 de tus Atajos como botones, junto a Mantener despierto, Bloquear y una nota rápida."],
         "launcherSitePlaceholder": ["en": "A site, like github.com", "pt": "Um site, como github.com", "es": "Un sitio, como github.com"],
         "launcherBadSite": ["en": "That isn't a web address (or the list is full).", "pt": "Isso não é um endereço de site (ou a lista está cheia).", "es": "Eso no es una dirección web (o la lista está llena)."],
         "launcherAddApp": ["en": "Add app…", "pt": "Adicionar app…", "es": "Añadir app…"],
@@ -330,7 +342,15 @@ enum Strings {
         "timerStart": ["en": "Start", "pt": "Começar", "es": "Empezar"],
         "timerAgain": ["en": "Again: %@", "pt": "De novo: %@", "es": "Otra vez: %@"],
         "styleTitle": ["en": "Style", "pt": "Estilo", "es": "Estilo"],
-        "colorWhite": ["en": "White", "pt": "Branco", "es": "Blanco"],
+        "color.red": ["en": "Red", "pt": "Vermelho", "es": "Rojo"],
+        "color.orange": ["en": "Orange", "pt": "Laranja", "es": "Naranja"],
+        "color.yellow": ["en": "Yellow", "pt": "Amarelo", "es": "Amarillo"],
+        "color.green": ["en": "Green", "pt": "Verde", "es": "Verde"],
+        "color.teal": ["en": "Teal", "pt": "Ciano", "es": "Cian"],
+        "color.blue": ["en": "Blue", "pt": "Azul", "es": "Azul"],
+        "color.purple": ["en": "Purple", "pt": "Roxo", "es": "Morado"],
+        "color.pink": ["en": "Pink", "pt": "Rosa", "es": "Rosa"],
+        "color.white": ["en": "White", "pt": "Branco", "es": "Blanco"],
         "groupScreen": ["en": "Screen", "pt": "Tela", "es": "Pantalla"],
         "groupWork": ["en": "Work", "pt": "Trabalho", "es": "Trabajo"],
         "groupSound": ["en": "Sound", "pt": "Som", "es": "Sonido"],
@@ -412,6 +432,20 @@ enum Strings {
         "roundness": ["en": "Roundness", "pt": "Arredondamento", "es": "Redondez"],
         "eventEffects": ["en": "Light around the notch when something finishes or waits for you", "pt": "Luz em volta do notch quando algo termina ou espera você", "es": "Luz alrededor del notch cuando algo termina o te espera"],
         "agentPrefs": ["en": "AI agents", "pt": "Agentes de IA", "es": "Agentes de IA"],
+        "agentActions": ["en": "Show what the agent is doing right now", "pt": "Mostrar o que o agente está fazendo agora", "es": "Mostrar lo que el agente está haciendo ahora"],
+        "agentWaiting": ["en": "%@ is waiting for you", "pt": "%@ está esperando você", "es": "%@ te está esperando"],
+        "compacting": ["en": "Compacting the conversation", "pt": "Compactando a conversa", "es": "Compactando la conversación"],
+        "subagents": ["en": "%ld helpers", "pt": "%ld subagentes", "es": "%ld subagentes"],
+        "act.run": ["en": "Running %@", "pt": "Rodando %@", "es": "Ejecutando %@"],
+        "act.edit": ["en": "Editing %@", "pt": "Editando %@", "es": "Editando %@"],
+        "act.write": ["en": "Writing %@", "pt": "Escrevendo %@", "es": "Escribiendo %@"],
+        "act.read": ["en": "Reading %@", "pt": "Lendo %@", "es": "Leyendo %@"],
+        "act.search": ["en": "Searching %@", "pt": "Procurando %@", "es": "Buscando %@"],
+        "act.web": ["en": "Looking on the web", "pt": "Pesquisando na web", "es": "Buscando en la web"],
+        "act.agent": ["en": "Helper: %@", "pt": "Subagente: %@", "es": "Subagente: %@"],
+        "act.agentPlain": ["en": "Starting a helper", "pt": "Abrindo um subagente", "es": "Abriendo un subagente"],
+        "act.tool": ["en": "Using %@", "pt": "Usando %@", "es": "Usando %@"],
+        "duckForAgents": ["en": "Lower the music while an agent waits for you", "pt": "Abaixar a música enquanto um agente espera sua resposta", "es": "Bajar la música mientras un agente espera tu respuesta"],
         "privateAgents": ["en": "Private mode: don't show prompts and answers in the notch", "pt": "Modo privado: não mostrar pedidos e respostas no notch", "es": "Modo privado: no mostrar peticiones y respuestas en el notch"],
         "approveKeys": ["en": "⌃⌥↩ allows · ⌃⌥⌫ denies", "pt": "⌃⌥↩ permite · ⌃⌥⌫ nega", "es": "⌃⌥↩ permite · ⌃⌥⌫ deniega"],
         "alwaysAllow": ["en": "Always allow exactly this command in this folder", "pt": "Sempre permitir exatamente este comando nesta pasta", "es": "Permitir siempre exactamente este comando en esta carpeta"],
@@ -441,6 +475,7 @@ enum Strings {
                                 "pt": "Só pra copiar texto da tela; a imagem é apagada logo depois da leitura.",
                                 "es": "Solo para copiar texto de la pantalla; la imagen se borra justo después de leerla."],
         "addons": ["en": "Add-ons", "pt": "Complementos", "es": "Complementos"],
+        "agents": ["en": "Agents", "pt": "Agentes", "es": "Agentes"],
         "addonsSub": ["en": "Optional extras. Turn them on now or anytime in Settings or the notch menu.",
                       "pt": "Extras opcionais. Ligue agora ou quando quiser, nos Ajustes ou no menu do notch.",
                       "es": "Extras opcionales. Actívalos ahora o cuando quieras en Ajustes o en el menú del notch."],
@@ -512,9 +547,24 @@ enum Strings {
         "activityWaiting": ["en": "Waiting for you", "pt": "Esperando você", "es": "Esperándote"],
         // Settings window
         "welcomeTitle": ["en": "Welcome to NotchUser", "pt": "Bem-vindo ao NotchUser", "es": "Bienvenido a NotchUser"],
-        "welcomeSub": ["en": "Your music, a file shelf, text from the screen and a mirror, right in the notch.",
-                       "pt": "Sua música, uma prateleira, texto da tela e um espelho, direto no notch.",
-                       "es": "Tu música, un estante, texto de la pantalla y un espejo, justo en el notch."],
+        "welcomeSub": ["en": "Your music, your AI agents, your shortcuts and a shelf for files, all in the notch.",
+                       "pt": "Sua música, seus agentes de IA, seus atalhos e uma prateleira de arquivos, tudo no notch.",
+                       "es": "Tu música, tus agentes de IA, tus atajos y un estante para archivos, todo en el notch."],
+        "featAgents": ["en": "AI agents", "pt": "Agentes de IA", "es": "Agentes de IA"],
+        "featAgentsDesc": ["en": "Claude Code, Codex and Copilot: see what they're doing, their plan, and approve from the notch.",
+                           "pt": "Claude Code, Codex e Copilot: veja o que estão fazendo, o plano, e aprove pelo notch.",
+                           "es": "Claude Code, Codex y Copilot: mira qué hacen, su plan, y aprueba desde el notch."],
+        "featLauncher": ["en": "Shortcuts", "pt": "Atalhos", "es": "Atajos"],
+        "featLauncherDesc": ["en": "Your sites and apps one click away, plus keep awake, lock and a quick note.",
+                             "pt": "Seus sites e apps a um clique, e mais manter acordado, bloquear e nota rápida.",
+                             "es": "Tus sitios y apps a un clic, y además mantener despierto, bloquear y nota rápida."],
+        "addonsTitle": ["en": "Pick your extras", "pt": "Escolha os complementos", "es": "Elige los complementos"],
+        "tipDrag": ["en": "Drag a file to the notch to keep it; a link or app onto “Make a shortcut” to pin it",
+                    "pt": "Arraste um arquivo pro notch pra guardar; um link ou app em “Criar atalho” pra fixar",
+                    "es": "Arrastra un archivo al notch para guardarlo; un enlace o app a “Crear atajo” para fijarlo"],
+        "tipAgents": ["en": "⌃⌥↩ allows and ⌃⌥⌫ denies what an agent asks", "pt": "⌃⌥↩ permite e ⌃⌥⌫ nega o que um agente pede",
+                      "es": "⌃⌥↩ permite y ⌃⌥⌫ deniega lo que pide un agente"],
+        "welcomeAgain": ["en": "Show the welcome again", "pt": "Ver as boas-vindas de novo", "es": "Ver la bienvenida otra vez"],
         "settingsTitle": ["en": "NotchUser Settings", "pt": "Ajustes do NotchUser", "es": "Ajustes de NotchUser"],
         "language": ["en": "Language", "pt": "Idioma", "es": "Idioma"],
         "langSystem": ["en": "System", "pt": "Sistema", "es": "Sistema"],
@@ -1001,6 +1051,48 @@ final class NowPlaying: ObservableObject {
         """,
     ]
 
+    // MARK: Ducking: the music steps back while an agent waits for you
+
+    /// Only touched on `queue`: where the volume was, and where it was put.
+    private var ducked: (player: Player, from: Int, to: Int)?
+
+    /// Down to about a third while something waits for an answer; back up, gently, once answered.
+    /// Only the player's own volume (Spotify or Music), never the Mac's, and never back over a
+    /// volume you changed in the meantime.
+    func duck(_ on: Bool) {
+        let player = on && isPlaying ? current?.player : nil
+        queue.async { [self] in
+            if on {
+                guard ducked == nil, let p = player,
+                      let v = run("tell application \"\(p.rawValue)\" to get sound volume")?.int32Value, v > 15 else { return }
+                let to = max(10, Int(Double(v) * 0.35))
+                for step in 1...3 {
+                    _ = run("tell application \"\(p.rawValue)\" to set sound volume to \(Int(v) - (Int(v) - to) * step / 3)")
+                    usleep(40_000)
+                }
+                ducked = (p, Int(v), to)
+            } else {
+                guard let d = ducked else { return }
+                ducked = nil
+                guard let now = run("tell application \"\(d.player.rawValue)\" to get sound volume")?.int32Value,
+                      abs(Int(now) - d.to) <= 2 else { return }
+                for step in 1...8 {
+                    _ = run("tell application \"\(d.player.rawValue)\" to set sound volume to \(d.to + (d.from - d.to) * step / 8)")
+                    usleep(70_000)
+                }
+            }
+        }
+    }
+
+    /// Quitting while the music is down: put it back first, right away.
+    func restoreVolumeNow() {
+        queue.sync {
+            guard let d = ducked else { return }
+            ducked = nil
+            _ = run("tell application \"\(d.player.rawValue)\" to set sound volume to \(d.from)")
+        }
+    }
+
     // Runs on `queue` only.
     private func run(_ source: String) -> NSAppleEventDescriptor? {
         let script = scripts[source] ?? NSAppleScript(source: source)!
@@ -1324,11 +1416,13 @@ struct Activity: Codable, Equatable, Identifiable {
         var state: String    // pending, active or done
     }
     var steps: [Step]?
+    var action: String?      // what the agent is doing right now: "Editing main.swift"
+    var subagents: Int?      // helpers it started that are still working
     var started: Date?
     var updated: Date?
 
     private enum CodingKeys: String, CodingKey {
-        case title, detail, state, progress, question, options, multi, header, step, summary, icon, app, open, pid, trust, steps, started, updated
+        case title, detail, state, progress, question, options, multi, header, step, summary, icon, app, open, pid, trust, steps, action, subagents, started, updated
     }
 
     /// Commands worth a second look before they're allowed. Never trusted automatically.
@@ -2043,6 +2137,8 @@ enum CLI {
             a.state = .running
             a.question = nil
             a.summary = nil
+            a.action = nil
+            a.subagents = nil
             a.started = Date()
             // A list that was finished belongs to what was asked before.
             if a.hasPlan && a.stepsDone == a.steps?.count { a.steps = nil }
@@ -2084,27 +2180,54 @@ enum CLI {
             if let data = try? JSONSerialization.data(withJSONObject: out) { FileHandle.standardOutput.write(data) }
         case "PreToolUse" where (j["tool_name"] as? String) == "AskUserQuestion":
             return answerQuestions(a, input: j["tool_input"] as? [String: Any] ?? [:])
+        case "PreToolUse", "preToolUse":
+            // Says nothing back: the tool runs as it would have.
+            guard existing != nil else { return 0 }
+            let tool = (j["tool_name"] as? String) ?? ""
+            let input = j["tool_input"] as? [String: Any] ?? [:]
+            changeLocked(id) { now in
+                if tool == "Task" || tool == "Agent" { now.subagents = (now.subagents ?? 0) + 1 }
+                now.action = privateMode || !liveActions ? nil : actionText(tool: tool, input: input) ?? now.action
+            }
+        case "SubagentStop", "subagentStop":
+            guard existing != nil else { return 0 }
+            changeLocked(id) { now in now.subagents = max(0, (now.subagents ?? 0) - 1) == 0 ? nil : (now.subagents ?? 1) - 1 }
+        case "PreCompact", "preCompact":
+            guard existing != nil else { return 0 }
+            changeLocked(id) { now in now.action = L("compacting") }
+        case "Notification", "notification":
+            // Permission prompts are already in the notch; this is the other kind: it's waiting for you.
+            let kind = (j["notification_type"] as? String) ?? ""
+            let message = (j["message"] as? String) ?? ""
+            guard !kind.contains("permission"), !message.lowercased().contains("permission") else { return 0 }
+            var q = URLComponents(string: "notchuser://notify")!
+            q.queryItems = [URLQueryItem(name: "title", value: L("agentWaiting", agent.name)),
+                            URLQueryItem(name: "detail", value: folder.isEmpty ? nil : folder),
+                            URLQueryItem(name: "icon", value: "bubble.left.and.text.bubble.right.fill"),
+                            URLQueryItem(name: "glow", value: "orange")]
+            if let url = q.url {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                p.arguments = ["-g", url.absoluteString]
+                try? p.run()
+                p.waitUntilExit()
+            }
         case "PostToolUse", "postToolUse":
             guard existing != nil else { return 0 }
-            // Several tools can finish at once (three TaskCreate in one go): one change at a time,
-            // each starting from what the one before it left.
-            let lock = open(ActivityFiles.url(id, "lock").path, O_CREAT | O_RDWR, 0o600)
-            if lock >= 0 { flock(lock, LOCK_EX) }
-            defer { if lock >= 0 { flock(lock, LOCK_UN); close(lock) } }
-            guard var now = ActivityFiles.read(id) else { return 0 }
-            now.id = id
-            let before = now.steps
-            // Private: the plan's text stays out of the notch, including what was there before.
-            if privateMode { now.steps = nil } else {
-                updatePlan(&now, tool: (j["tool_name"] as? String) ?? "", input: j["tool_input"] as? [String: Any] ?? [:], response: j["tool_response"])
+            changeLocked(id) { now in
+                // Private: the plan's text stays out of the notch, including what was there before.
+                if privateMode { now.steps = nil } else {
+                    updatePlan(&now, tool: (j["tool_name"] as? String) ?? "", input: j["tool_input"] as? [String: Any] ?? [:], response: j["tool_response"])
+                }
             }
-            if now.steps != before { ActivityFiles.write(now) }
         case "Stop", "agentStop":
             // Codex reads a Stop hook's output as JSON, so say "nothing to add" in JSON.
             if agent == .codex { FileHandle.standardOutput.write(Data("{}".utf8)) }
             guard existing != nil else { return 0 }
             a.state = .done
             a.question = nil
+            a.action = nil
+            a.subagents = nil
             // Claude Code and Codex pass what they just said: the notch shows it as the result.
             a.summary = privateMode ? nil : (j["last_assistant_message"] as? String).flatMap(summarize)
             ActivityFiles.write(a)
@@ -2114,6 +2237,55 @@ enum CLI {
             break
         }
         return 0
+    }
+
+    /// Several hooks can run at once (three tools in one go): one change at a time, each starting
+    /// from what the one before it left, and written only if something changed.
+    private static func changeLocked(_ id: String, _ change: (inout Activity) -> Void) {
+        // These hooks run before every tool the agent uses: never make it wait. If the lock isn't
+        // free within a moment (another hook stuck), skip this update rather than hold the agent.
+        let lock = open(ActivityFiles.url(id, "lock").path, O_CREAT | O_RDWR, 0o600)
+        guard lock >= 0 else { return }
+        defer { close(lock) }
+        let deadline = Date().addingTimeInterval(1.5)
+        while flock(lock, LOCK_EX | LOCK_NB) != 0 {
+            guard Date() < deadline else { return }
+            usleep(20_000)
+        }
+        defer { flock(lock, LOCK_UN) }
+        guard var now = ActivityFiles.read(id) else { return }
+        now.id = id
+        let before = now
+        change(&now)
+        if now != before { ActivityFiles.write(now) }
+    }
+
+    private static var liveActions: Bool {
+        CFPreferencesCopyAppValue("agentActions" as CFString, ActivityFiles.appID as CFString) as? Bool ?? true
+    }
+
+    /// "Editing main.swift", "Running npm test"… nil for tools that don't say much (the plan tools).
+    private static func actionText(tool: String, input: [String: Any]) -> String? {
+        func file(_ k: String) -> String? { (input[k] as? String).map { ($0 as NSString).lastPathComponent } }
+        func short(_ t: String) -> String {
+            let line = t.split(separator: "\n").first.map(String.init) ?? t
+            return line.count > 48 ? String(line.prefix(47)) + "…" : line
+        }
+        switch tool {
+        case "Bash":
+            if let d = input["description"] as? String, !d.isEmpty { return short(d) }
+            return (input["command"] as? String).map { L("act.run", short($0)) }
+        case "Edit", "MultiEdit", "NotebookEdit": return file("file_path").map { L("act.edit", $0) } ?? file("notebook_path").map { L("act.edit", $0) }
+        case "Write": return file("file_path").map { L("act.write", $0) }
+        case "Read": return file("file_path").map { L("act.read", $0) }
+        case "Grep", "Glob": return (input["pattern"] as? String).map { L("act.search", short($0)) }
+        case "WebFetch", "WebSearch": return L("act.web")
+        case "Task", "Agent": return (input["description"] as? String).map { L("act.agent", short($0)) } ?? L("act.agentPlain")
+        case _ where AgentHooks.planTools.split(separator: "|").contains(where: { $0 == tool }): return nil
+        case _ where tool.hasPrefix("mcp__"):
+            return L("act.tool", tool.split(separator: "_").last.map(String.init) ?? tool)
+        default: return tool.isEmpty ? nil : L("act.tool", tool)
+        }
     }
 
     /// Keeps the activity's steps in line with the agent's to-do list. A whole list replaces what
@@ -2475,7 +2647,12 @@ enum AgentHooks {
         var list: [Event] = [("UserPromptSubmit", nil, nil), ("PermissionRequest", 600, nil), ("Stop", nil, nil), ("SessionEnd", nil, nil)]
         // Claude Code lets a hook answer its multiple-choice questions.
         if agent == .claude {
-            list.append(("PreToolUse", 600, "AskUserQuestion"))
+            // Every tool, for "what it's doing now"; AskUserQuestion is answered from the notch (600 s).
+            list.append(("PreToolUse", 600, nil))
+            // "Waiting for your input", helpers finishing, and the conversation being compacted.
+            list.append(("Notification", nil, nil))
+            list.append(("SubagentStop", nil, nil))
+            list.append(("PreCompact", nil, nil))
             // Its to-do list, each time it changes: the notch shows the plan and how far along it is.
             list.append(("PostToolUse", nil, planTools))
         }
@@ -3486,6 +3663,42 @@ final class Launcher: ObservableObject {
         return true
     }
 
+    /// Dropped on "make a shortcut": a web link becomes a site, an app becomes an app. Says what happened.
+    func accept(_ providers: [NSItemProvider]) -> Bool {
+        guard let p = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) || $0.canLoadObject(ofClass: URL.self) || $0.canLoadObject(ofClass: String.self) }) else { return false }
+        let take: (URL?) -> Void = { url in
+            DispatchQueue.main.async {
+                guard let url else { return }
+                let target = url.isFileURL ? url.path : Self.siteURL(url.absoluteString)?.absoluteString
+                if let target, self.items.contains(where: { $0.target == target }) {
+                    self.onEvent?(.init(icon: "checkmark.circle.fill", title: L("shortcutExists"), detail: nil, ok: true))
+                    return
+                }
+                let before = self.tiles.count
+                if url.isFileURL {
+                    if url.pathExtension == "app" { self.addApp(url) }
+                } else {
+                    self.addSite(url.absoluteString)
+                }
+                let added = self.tiles.count > before
+                let full = self.tiles.count >= Self.maxTiles && !added
+                self.onEvent?(.init(icon: added ? "plus.app.fill" : "exclamationmark.triangle.fill",
+                                    title: L(added ? "shortcutAdded" : full ? "shortcutsFull" : "shortcutRefused"),
+                                    detail: added ? self.tiles.last?.title : nil, ok: added))
+            }
+        }
+        if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            p.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                take((item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) } ?? (item as? URL))
+            }
+        } else if p.canLoadObject(ofClass: URL.self) {
+            _ = p.loadObject(ofClass: URL.self) { url, _ in take(url) }
+        } else {
+            _ = p.loadObject(ofClass: String.self) { text, _ in take(text.flatMap { Self.siteURL($0) }) }
+        }
+        return true
+    }
+
     func addApp(_ url: URL) {
         guard tiles.count < Self.maxTiles, !items.contains(where: { $0.target == url.path }) else { return }
         let name = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
@@ -3506,6 +3719,9 @@ final class Launcher: ObservableObject {
     func remove(_ item: LaunchItem) {
         items.removeAll { $0.id == item.id }
         save()
+        if item.kind == .site { try? FileManager.default.removeItem(at: Self.cacheURL(item.target)) }
+        icons[item.target] = nil
+        glows[item.target] = nil
     }
 
     func move(_ item: LaunchItem, by step: Int) {
@@ -3645,7 +3861,15 @@ final class Launcher: ObservableObject {
                    let img = image(u) { return img }
             }
         }
-        if let data = get(root.appendingPathComponent("/favicon.ico")), let img = NSImage(data: data) { return img }
+        if let img = image(root.appendingPathComponent("/favicon.ico")) { return img }
+        // Some sites turn away anything that isn't a browser (LinkedIn, Crunchyroll…). Only then is
+        // an icon service asked, with nothing but the site's name.
+        let name = host.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? host
+        if let u = URL(string: "https://www.google.com/s2/favicons?domain=\(name)&sz=128"), let img = image(u) { return img }
+        // Small, but better than a letter.
+        for u in [root.appendingPathComponent("/favicon.ico"), URL(string: "https://icons.duckduckgo.com/ip3/\(name).ico")].compactMap({ $0 }) {
+            if let data = get(u), data.count < 2_000_000, let img = NSImage(data: data) { return img }
+        }
         return nil
     }
 
@@ -4362,6 +4586,8 @@ final class NotchState: ObservableObject {
     static let lyricHeight: CGFloat = 22
     @Published var dragging = false      // a file is being dragged somewhere on screen
     @Published var dropTargeted = false  // ...and it is over the notch
+    @Published var launcherDropTargeted = false  // ...over "make a shortcut"
+    var shortcutZone: CGRect = .null             // where that target is, in the notch's coordinates
     @Published var bump = false          // brief squash-and-stretch when something new arrives
     @Published var hovering = false      // the mouse is on the closed notch (it lifts, in the richer styles)
     @Published var mirrorOn = false      // the camera mirror replaces the usual sections
@@ -5177,10 +5403,11 @@ extension Activity {
         switch state {
         case .waiting: return question ?? L("activityWaiting")
         case .running:
-            // With a plan: how far along, and what it's on right now.
+            // How far along its plan, what it's doing this second, and its helpers.
             let plan = hasPlan ? "\(stepsDone)/\(steps?.count ?? 0)" : nil
-            let what = currentStep.map { $0.doing ?? $0.text } ?? detail
-            return [plan, what, time].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
+            let what = action ?? currentStep.map { $0.doing ?? $0.text } ?? detail
+            let helpers = (subagents ?? 0) > 0 ? L("subagents", subagents ?? 0) : nil
+            return [plan, what, helpers, time].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
         case .done: return L("activityDone") + " · " + time
         case .failed: return [L("activityFailed"), detail, time].compactMap { $0 }.joined(separator: " · ")
         }
@@ -5866,16 +6093,25 @@ struct Marquee: View {
         static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
     }
 
-    /// Slides to the end and back, at a calm reading speed, while it's on screen.
+    /// Slides to the end and back at a calm reading speed, a few times, resting at each end. Then it
+    /// stays put: a title rolling forever keeps the whole notch redrawing every frame. Hovering it
+    /// (a new view) rolls it again.
     private struct Roll: ViewModifier {
         var distance: CGFloat
         @StateObject private var moved = Box<Bool>(false)
         func body(content: Content) -> some View {
             content
                 .offset(x: moved.value ? -distance : 0)
-                .onAppear {
-                    withAnimation(.easeInOut(duration: Double(distance) / 28 + 0.6).delay(0.5).repeatForever(autoreverses: true)) {
-                        moved.value = true
+                .task(id: distance) {
+                    let slide = Double(distance) / 28 + 0.6
+                    for _ in 0..<3 {
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.easeInOut(duration: slide)) { moved.value = true }
+                        try? await Task.sleep(nanoseconds: UInt64((slide + 1.5) * 1_000_000_000))
+                        guard !Task.isCancelled else { return }
+                        withAnimation(.easeInOut(duration: slide)) { moved.value = false }
+                        try? await Task.sleep(nanoseconds: UInt64(slide * 1_000_000_000))
                     }
                 }
         }
@@ -6217,13 +6453,21 @@ enum NotchMenu {
             }
             look.addItem(.sectionHeader(title: L("accentColor")))
             look.addItem(item(L("accentAlbum"), "music.note", on: settings.accentHex == nil) { settings.accentHex = nil })
-            look.addItem(submenu(L("accentFixed"), "paintpalette") { colors in
-                for hex in ThemeSettings.swatches {
-                    let i = item(hex == "#FFFFFF" ? L("colorWhite") : "", nil, on: settings.accentHex == hex) { settings.accentHex = hex }
-                    i.image = dot(NSColor(Color(hex: hex) ?? .white))
+            let fixed = submenu(L("accentFixed"), "paintpalette") { colors in
+                // Each color by name, with its swatch: an item with no title draws as an empty row.
+                let names = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "white"]
+                for (hex, name) in zip(ThemeSettings.swatches, names) {
+                    let i = item(L("color." + name), nil, on: settings.accentHex == hex) { settings.accentHex = hex }
+                    // The swatch is part of the text: menus here don't draw item images.
+                    let title = NSMutableAttributedString(string: "●  ", attributes: [
+                        .foregroundColor: NSColor(Color(hex: hex) ?? .white), .font: NSFont.menuFont(ofSize: 0)])
+                    title.append(NSAttributedString(string: L("color." + name), attributes: [.font: NSFont.menuFont(ofSize: 0)]))
+                    i.attributedTitle = title
                     colors.addItem(i)
                 }
-            })
+            }
+            fixed.state = settings.accentHex != nil ? .on : .off
+            look.addItem(fixed)
             look.addItem(.separator())
             look.addItem(submenu(L("motion"), "wand.and.stars") { motions in
                 for mo in Settings.Motion.allCases {
@@ -6246,7 +6490,7 @@ enum NotchMenu {
             sub.addItem(item(L("addonActivities"), "bolt.horizontal.circle", on: settings.activitiesEnabled) {
                 settings.activitiesEnabled.toggle()
                 // Connecting the agents lives in Settings; show it the first time.
-                if settings.activitiesEnabled && !AgentHooks.anyInstalled { SettingsWindow.shared.show(welcome: false, pane: .addons) }
+                if settings.activitiesEnabled && !AgentHooks.anyInstalled { SettingsWindow.shared.show(welcome: false, pane: .agents) }
             })
             sub.addItem(.sectionHeader(title: L("groupSound")))
             sub.addItem(item(L("addonLyrics"), "quote.bubble", on: settings.lyricsEnabled) { settings.lyricsEnabled.toggle() })
@@ -6282,17 +6526,6 @@ enum NotchMenu {
         return parent
     }
 
-    /// A round swatch for the color items.
-    private static func dot(_ color: NSColor) -> NSImage {
-        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
-            color.setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
-            NSColor.labelColor.withAlphaComponent(0.25).setStroke()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 1.5, dy: 1.5)).stroke()
-            return true
-        }
-    }
-
     private static func item(_ title: String, _ symbol: String?, key: String = "", modifiers: NSEvent.ModifierFlags = .command,
                              on: Bool? = nil, _ action: @escaping () -> Void) -> NSMenuItem {
         let i = ClosureMenuItem(title, action)
@@ -6318,9 +6551,13 @@ struct LauncherView: View {
                 HStack(spacing: 6) {
                     ForEach(Array(launcher.tiles.enumerated()), id: \.element.id) { n, item in
                         LaunchTile(item: item, icon: launcher.icons[item.target], glow: launcher.glows[item.target] ?? accent, index: n,
-                                   size: big ? 46 : 34) {
+                                   size: big ? 46 : 34, remove: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { launcher.remove(item) }
+                            launcher.onEvent?(.init(icon: "trash.fill", title: L("shortcutRemoved"), detail: item.title, ok: true))
+                        }) {
                             launcher.open(item)
                         }
+                        .transition(.scale(scale: 0.2).combined(with: .opacity))
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -6368,9 +6605,16 @@ struct LaunchTile: View {
     /// Its place in the row: the icons come in one after another.
     var index = 0
     var size: CGFloat = 34
+    /// Held, then pulled away from its place: it goes, like an icon pulled off the Dock.
+    var remove: () -> Void = {}
     var open: () -> Void
     @StateObject private var hover = Box(false)
     @StateObject private var shown = Box(false)
+    @StateObject private var pulled = Box<CGSize?>(nil)   // nil: not held; otherwise how far it was dragged
+    @StateObject private var pressedAt = Box<Date?>(nil)
+    @StateObject private var liftLater = Box<DispatchWorkItem?>(nil)
+    private static let pullAway: CGFloat = 85, holdTime = 0.35
+    private var pullFraction: CGFloat { pulled.value.map { min(1, hypot($0.width, $0.height) / Self.pullAway) } ?? 0 }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -6399,21 +6643,74 @@ struct LaunchTile: View {
                     )
                     .shadow(color: .black.opacity(hover.value ? 0.6 : 0.5), radius: hover.value ? 8 : 5, y: hover.value ? 7 : 4)
                     .modifier(Tilt(enabled: true, size: size))
+                    // Held: a remove badge on its corner, moving and shrinking with it.
+                    .overlay(alignment: .topTrailing) {
+                        if pulled.value != nil {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white, Color.red)
+                                .offset(x: 5, y: -5)
+                                .transition(.scale.combined(with: .opacity))
+                        }
+                    }
                     // Under the mouse it rises off the notch.
                     .offset(y: hover.value ? -3 : 0)
             }
             .frame(width: size + 14, height: size + 8)
         }
+        // Held: it lifts, follows the mouse and fades as it nears the point where it goes.
+        .scaleEffect(pulled.value == nil ? 1 : 1.15 - 0.35 * pullFraction)
+        .opacity(1 - 0.6 * pullFraction)
+        .offset(pulled.value ?? .zero)
+        .zIndex(pulled.value == nil ? 0 : 1)
         .scaleEffect(shown.value ? 1 : 0.4)
         .opacity(shown.value ? 1 : 0)
         .offset(y: shown.value ? 0 : 8)
+        // One gesture for both: a quick click opens; held a moment it lifts, and pulled away it goes.
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if pressedAt.value == nil {
+                        pressedAt.value = Date()
+                        let lift = DispatchWorkItem {
+                            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { pulled.value = .zero }
+                        }
+                        liftLater.value = lift
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.holdTime, execute: lift)
+                    }
+                    let t = value.translation
+                    // Moved before the hold: not a click, not a pull.
+                    if pulled.value == nil {
+                        if hypot(t.width, t.height) > 6 { liftLater.value?.cancel() }
+                        return
+                    }
+                    pulled.value = t
+                    // Pulled far enough: gone right away, before the mouse leaves the notch and it closes.
+                    if hypot(t.width, t.height) >= Self.pullAway {
+                        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                        pulled.value = nil
+                        remove()
+                    }
+                }
+                .onEnded { value in
+                    liftLater.value?.cancel()
+                    let quick = Date().timeIntervalSince(pressedAt.value ?? Date()) < Self.holdTime
+                    let still = hypot(value.translation.width, value.translation.height) <= 6
+                    pressedAt.value = nil
+                    if pulled.value != nil {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) { pulled.value = nil }
+                    } else if quick && still {
+                        open()
+                    }
+                }
+        )
         .onAppear {
             withAnimation(.spring(response: 0.42, dampingFraction: 0.62).delay(0.05 + Double(index) * 0.045)) { shown.value = true }
         }
         .onDisappear { shown.value = false }
         .contentShape(Rectangle())
         .onHover { h in withAnimation(.easeOut(duration: 0.2)) { hover.value = h } }
-        .onTapGesture(perform: open)
         // No label under it: the name shows on hover.
         .help(item.title)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: hover.value)
@@ -6771,9 +7068,9 @@ struct NotchView: View {
                 .allowsHitTesting(false)
         }
 
-        .onDrop(of: Shelf.dropTypes, isTargeted: Binding(get: { ui.dropTargeted }, set: { ui.dropTargeted = $0 })) { providers in
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { shelf.accept(providers) }
-        }
+        // One drop target for the whole notch: where the item is let go decides shelf or shortcut.
+        .coordinateSpace(name: "notchDrop")
+        .onDrop(of: Shelf.dropTypes, delegate: NotchDrop(ui: ui, shelf: shelf))
         .scaleEffect(x: ui.bump ? motion.bump.width : 1, y: ui.bump ? motion.bump.height : 1, anchor: .top)
         .animation(.spring(response: 0.22, dampingFraction: motion.bumpDamping), value: ui.bump)
         .scaleEffect(x: lift ? 1.04 : 1 + 0.045 * pull, y: lift ? 1.12 : 1 + 0.18 * pull, anchor: .top)
@@ -7196,11 +7493,68 @@ struct NotchView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: on)
     }
 
-    /// A wide, short strip: files sit side by side and scroll sideways.
+    /// Carrying a link or an app: a second target beside the shelf turns it into a shortcut.
+    private var shortcutDropZone: some View {
+        let on = ui.launcherDropTargeted
+        return VStack(spacing: 4) {
+            Image(systemName: on ? "plus.app.fill" : "plus.app")
+                .font(.system(size: 20, weight: .semibold))
+                .symbolEffect(.bounce, value: on)
+            Text(on ? L("releaseNow") : L("dropShortcut")).font(.system(size: 11.5, weight: .semibold)).multilineTextAlignment(.center)
+        }
+        .foregroundColor(on ? .black : .white.opacity(0.7))
+        .frame(width: 128)
+        .frame(maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(on ? AnyShapeStyle(np.accent) : AnyShapeStyle(Color.white.opacity(0.05))))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(Color.white.opacity(on ? 0 : 0.3), style: StrokeStyle(lineWidth: 1.4, dash: [6, 5])))
+        .scaleEffect(on ? 1.03 : 1)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: on)
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { ui.shortcutZone = g.frame(in: .named("notchDrop")) }
+                .onChange(of: g.frame(in: .named("notchDrop"))) { ui.shortcutZone = $0 }
+                .onDisappear { ui.shortcutZone = .null }
+        })
+    }
+
+    /// Where a carried item would land, followed as it moves: over "make a shortcut" it becomes one,
+/// anywhere else it goes on the shelf.
+struct NotchDrop: DropDelegate {
+    let ui: NotchState
+    let shelf: Shelf
+
+    private func overShortcut(_ info: DropInfo) -> Bool {
+        Settings.shared.launcherEnabled && !ui.shortcutZone.isNull && ui.shortcutZone.insetBy(dx: -6, dy: -6).contains(info.location)
+    }
+    private func update(_ info: DropInfo) {
+        let shortcut = overShortcut(info)
+        if ui.launcherDropTargeted != shortcut { ui.launcherDropTargeted = shortcut }
+        if ui.dropTargeted != !shortcut { ui.dropTargeted = !shortcut }
+    }
+    func dropEntered(info: DropInfo) { update(info) }
+    func dropUpdated(info: DropInfo) -> DropProposal? { update(info); return DropProposal(operation: .copy) }
+    func dropExited(info: DropInfo) {
+        ui.dropTargeted = false
+        ui.launcherDropTargeted = false
+    }
+    func performDrop(info: DropInfo) -> Bool {
+        let providers = info.itemProviders(for: Shelf.dropTypes)
+        let shortcut = overShortcut(info)
+        dropExited(info: info)
+        if shortcut { return Launcher.shared.accept(providers) }
+        return withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { shelf.accept(providers) }
+    }
+}
+
+/// A wide, short strip: files sit side by side and scroll sideways.
     private var shelfSection: some View {
         Group {
             if ui.dragging {
-                dropZone
+                HStack(spacing: 8) {
+                    dropZone
+                    if settings.launcherEnabled { shortcutDropZone }
+                }
             } else {
                 HStack(spacing: 4) {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -7608,6 +7962,8 @@ struct AddOnsList: View {
     @ObservedObject var settings = Settings.shared
     /// Settings lists every add-on; the walkthrough only has room for the first few.
     var extras = false
+    /// Settings has a pane of its own for the agents; the walkthrough shows them here.
+    var showActivities = true
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             Toggle(L("addonOCR"), isOn: $settings.ocrEnabled)
@@ -7619,10 +7975,12 @@ struct AddOnsList: View {
                     .padding(.leading, 20)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            Toggle(L("addonActivities"), isOn: $settings.activitiesEnabled.animation(.spring(response: 0.35)))
-                .help(L("activitiesHint"))
-            if settings.activitiesEnabled {
-                ActivitiesSetup().transition(.opacity.combined(with: .move(edge: .top)))
+            if showActivities {
+                Toggle(L("addonActivities"), isOn: $settings.activitiesEnabled.animation(.spring(response: 0.35)))
+                    .help(L("activitiesHint"))
+                if settings.activitiesEnabled {
+                    ActivitiesSetup().transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             Toggle(L("headphonesHQ"), isOn: $settings.keepHeadphonesHQ)
                 .help(L("headphonesHQHint"))
@@ -7852,6 +8210,8 @@ struct AgentPrefs: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle(L("privateAgents"), isOn: $settings.privateAgents)
+            Toggle(L("duckForAgents"), isOn: $settings.duckForAgents)
+            Toggle(L("agentActions"), isOn: $settings.agentActions)
                 .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
             Text(L("approveKeys")).font(.system(size: 10.5)).foregroundColor(.secondary)
             HStack {
@@ -8244,7 +8604,7 @@ struct PermissionsList: View {
 
 final class SettingsModel: ObservableObject {
     enum Pane: String, CaseIterable, Identifiable {
-        case general, appearance, motion, addons, permissions
+        case general, appearance, motion, agents, addons, permissions
         var id: String { rawValue }
         var title: String { L(rawValue == "general" ? "general" : rawValue) }
         var icon: String {
@@ -8252,6 +8612,7 @@ final class SettingsModel: ObservableObject {
             case .general: return "gearshape.fill"
             case .appearance: return "paintbrush.fill"
             case .motion: return "wand.and.stars"
+            case .agents: return "sparkles"
             case .addons: return "puzzlepiece.extension.fill"
             case .permissions: return "hand.raised.fill"
             }
@@ -8261,7 +8622,8 @@ final class SettingsModel: ObservableObject {
             case .general: return .gray
             case .appearance: return .purple
             case .motion: return .pink
-            case .addons: return .orange
+            case .agents: return .orange
+            case .addons: return .green
             case .permissions: return .blue
             }
         }
@@ -8301,6 +8663,8 @@ struct SettingsView: View {
         .frame(width: 780, height: 500)
         .background(VisualEffect(material: .hudWindow).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
+        // Switches that are on read as on: in your highlight color, not the gray of a graphite accent.
+        .tint(Settings.shared.fixedAccent ?? .blue)
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: model.pane)
         .animation(.easeInOut(duration: 0.2), value: settings.language)
     }
@@ -8384,6 +8748,13 @@ struct SettingsView: View {
                     .font(.system(size: 13))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                Button {
+                    SettingsWindow.shared.show(welcome: true)
+                } label: {
+                    Label(L("welcomeAgain"), systemImage: "sparkles")
+                }
+                .controlSize(.small)
+                .padding(.leading, 4)
             case .appearance:
                 glassSection("") { StylePicker() }
                 glassSection(L("theme")) { ThemeSettings() }
@@ -8391,9 +8762,27 @@ struct SettingsView: View {
             case .motion:
                 glassSection(L("motion")) { MotionSettings() }
                 glassSection(L("size")) { SizeSettings() }
+            case .agents:
+                // NotchUser's own thing: everything about the coding agents in one place.
+                glassSection("") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle(L("addonActivities"), isOn: $settings.activitiesEnabled.animation(.spring(response: 0.35)))
+                            .toggleStyle(.switch).controlSize(.small).font(.system(size: 13))
+                        Text(L("activitiesHint")).font(.system(size: 10.5)).foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if settings.activitiesEnabled {
+                            ActivitiesSetup().transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if settings.activitiesEnabled {
+                    glassSection(L("agentPrefs")) { AgentPrefs() }
+                }
+                glassSection(L("terminalActivities")) { ActivitiesHelp() }
             case .addons:
                 glassSection(L("addonLauncher")) { LauncherSettings() }
-                glassSection("") { AddOnsList(extras: true) }
+                glassSection("") { AddOnsList(extras: true, showActivities: false) }
                 Text(L("addonsSub"))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
@@ -8402,10 +8791,6 @@ struct SettingsView: View {
                 if settings.lidPauseEnabled, let lid {
                     glassSection(L("addonLid")) { LidSettings(lid: lid) }
                 }
-                if settings.activitiesEnabled {
-                    glassSection(L("agentPrefs")) { AgentPrefs() }
-                }
-                glassSection(L("terminalActivities")) { ActivitiesHelp() }
             case .permissions:
                 glassSection("") {
                     VStack(spacing: 10) {
@@ -8432,7 +8817,7 @@ struct LaunchAtLoginToggle: View {
 // MARK: - First-run walkthrough
 
 final class OnboardingModel: ObservableObject {
-    static let pages = 4
+    static let pages = 5
     @Published var page = 0
     /// Screen Recording only takes effect after a relaunch, so remember if it was asked for.
     var screenRequested = false
@@ -8452,7 +8837,8 @@ struct OnboardingView: View {
                 switch model.page {
                 case 0: welcomePage
                 case 1: featuresPage
-                case 2: permissionsPage
+                case 2: addonsPage
+                case 3: permissionsPage
                 default: readyPage
                 }
             }
@@ -8468,6 +8854,8 @@ struct OnboardingView: View {
         .frame(width: 500, height: 610)
         .background(VisualEffect(material: .hudWindow).ignoresSafeArea())
         .environment(\.colorScheme, .dark)
+        // Switches that are on read as on: in your highlight color, not the gray of a graphite accent.
+        .tint(Settings.shared.fixedAccent ?? .blue)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: model.page)
         .animation(.easeInOut(duration: 0.2), value: settings.language)
     }
@@ -8500,38 +8888,52 @@ struct OnboardingView: View {
         }
     }
 
+    /// Four cards, one per thing it does: read in a glance, nothing to set yet.
     private var featuresPage: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(L("featuresTitle"))
-                .font(.system(size: 22, weight: .bold))
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 4)
-            feature("music.note", .pink, L("featMusic"), L("featMusicDesc"))
-            feature("tray.full.fill", .blue, L("featShelf"), L("featShelfDesc"))
-            VStack(alignment: .leading, spacing: 6) {
-                glassSection(L("addons")) { AddOnsList() }
-                Text(L("addonsSub"))
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
+        VStack(spacing: 16) {
+            Text(L("featuresTitle")).font(.system(size: 22, weight: .bold))
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                feature("music.note", .pink, L("featMusic"), L("featMusicDesc"))
+                feature("sparkles", .orange, L("featAgents"), L("featAgentsDesc"))
+                feature("square.grid.2x2.fill", .purple, L("featLauncher"), L("featLauncherDesc"))
+                feature("tray.full.fill", .blue, L("featShelf"), L("featShelfDesc"))
             }
-            .padding(.top, 6)
         }
     }
 
     private func feature(_ icon: String, _ color: Color, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(color.gradient)
-                .frame(width: 42, height: 42)
+                .frame(width: 40, height: 40)
                 .overlay(Image(systemName: icon).font(.system(size: 18, weight: .semibold)).foregroundColor(.white))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 14, weight: .semibold))
-                Text(detail)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .shadow(color: color.opacity(0.45), radius: 8, y: 3)
+            Text(title).font(.system(size: 14, weight: .semibold))
+            Text(detail)
+                .font(.system(size: 11.5))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 168, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(LinearGradient(colors: [.white.opacity(0.16), .white.opacity(0.03)], startPoint: .top, endPoint: .bottom), lineWidth: 0.7))
+    }
+
+    /// Every add-on, the agents among them: a page of its own that scrolls, so nothing is cut off.
+    private var addonsPage: some View {
+        VStack(spacing: 10) {
+            Text(L("addonsTitle")).font(.system(size: 22, weight: .bold))
+            Text(L("addonsSub"))
+                .font(.system(size: 12.5))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            ScrollView(.vertical, showsIndicators: true) {
+                glassSection("") { AddOnsList(extras: true) }
+                    .padding(.bottom, 4)
             }
         }
     }
@@ -8553,9 +8955,12 @@ struct OnboardingView: View {
 
     private var readyPage: some View {
         VStack(spacing: 14) {
+            Spacer(minLength: 0)
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 46))
+                .font(.system(size: 52))
                 .foregroundStyle(.green)
+                .shadow(color: .green.opacity(0.4), radius: 14)
+                .symbolEffect(.bounce, value: model.page)
             Text(L("readyTitle")).font(.system(size: 24, weight: .bold))
             glassSection(L("behavior")) {
                 VStack(alignment: .leading, spacing: 9) {
@@ -8572,7 +8977,10 @@ struct OnboardingView: View {
                     Label(L("tipOCR"), systemImage: "text.viewfinder")
                 }
                 Label(L("tipMenu"), systemImage: "contextualmenu.and.cursorarrow")
+                Label(L("tipDrag"), systemImage: "hand.draw")
+                if settings.activitiesEnabled { Label(L("tipAgents"), systemImage: "keyboard") }
             }
+            .labelStyle(TipLabel())
             .font(.system(size: 12.5))
             .foregroundColor(.white.opacity(0.75))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -8583,6 +8991,7 @@ struct OnboardingView: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
+            Spacer(minLength: 0)
         }
     }
 
@@ -8596,7 +9005,7 @@ struct OnboardingView: View {
                 .foregroundColor(.white.opacity(0.6))
                 .opacity(model.page > 0 ? 1 : 0)
                 .disabled(model.page == 0)
-                .frame(width: 100, alignment: .leading)
+                .frame(width: 110, alignment: .leading)
             Spacer()
             HStack(spacing: 7) {
                 ForEach(0..<OnboardingModel.pages, id: \.self) { i in
@@ -8611,17 +9020,19 @@ struct OnboardingView: View {
             } label: {
                 Text(last ? L("getStarted") : L("next"))
                     .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 84)
+                    .foregroundColor(.black)
+                    .frame(width: 96, height: 32)
+                    .background(Capsule().fill(Color.white))
+                    .shadow(color: .white.opacity(0.18), radius: 8)
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
-            .frame(width: 100, alignment: .trailing)
+            .frame(width: 110, alignment: .trailing)
         }
     }
 }
 
-/// Centered, translucent window: the walkthrough on first launch, Settings afterwards.
 /// The pencil in the quick row: a small note under the notch, kept as you type, ready to copy or
 /// hand to the Notes app. One note, not a notes app.
 final class QuickNote: NSObject, NSWindowDelegate {
@@ -8649,16 +9060,19 @@ final class QuickNote: NSObject, NSWindowDelegate {
             w.delegate = self
             w.contentViewController = NSHostingController(rootView: QuickNoteView(model: model) { [weak w] in w?.close() })
             w.setContentSize(NSSize(width: 360, height: 240))
-            // Just under the notch, the first time; then wherever it was left.
-            if !w.setFrameUsingName("QuickNote"), let s = NSScreen.screens.first(where: { $0.hasNotch }) ?? NSScreen.main {
-                w.setFrameTopLeftPoint(NSPoint(x: s.frame.midX - 180, y: s.visibleFrame.maxY - 8))
+            // In the top right corner the first time, clear of the open notch; then wherever it was left.
+            if !w.setFrameUsingName("QuickNoteCorner"), let s = NSScreen.screens.first(where: { $0.hasNotch }) ?? NSScreen.main {
+                w.setFrameTopLeftPoint(NSPoint(x: s.visibleFrame.maxX - w.frame.width - 16, y: s.visibleFrame.maxY - 12))
             }
-            w.setFrameAutosaveName("QuickNote")
+            w.setFrameAutosaveName("QuickNoteCorner")
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        // The notch was open for the click: let it go back, the note is where the work is now.
+        NotificationCenter.default.post(name: Self.opened, object: nil)
     }
+    static let opened = Notification.Name("NotchUser.quickNoteOpened")
 
     /// A new note in Apple's Notes app with this text (Notes asks for permission the first time).
     static func sendToNotes(_ text: String) {
@@ -8711,6 +9125,17 @@ struct QuickNoteView: View {
     }
 }
 
+/// A tip line: the icon in a fixed column, so the texts line up.
+struct TipLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            configuration.icon.frame(width: 18).foregroundColor(.white.opacity(0.55))
+            configuration.title.fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Centered, translucent window: the walkthrough on first launch, Settings afterwards.
 final class SettingsWindow: NSObject, NSWindowDelegate {
     static let shared = SettingsWindow()
     private var window: NSWindow?
@@ -8753,19 +9178,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         Settings.shared.onboarded = true
         // macOS only applies Screen Recording access after the app restarts.
         if model.screenRequested {
-            relaunch()
+            AppLocation.relaunch(Bundle.main.bundleURL)
         } else {
             window?.close()
         }
     }
 
-    private func relaunch() {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
-        try? p.run()
-        NSApp.terminate(nil)
-    }
 
     func windowWillClose(_ notification: Notification) {
         perms.stop()
@@ -8806,6 +9224,13 @@ final class NotchController {
     let displayID: CGDirectDisplayID
     var peekUntil = Date.distantPast
     var keyOpenUntil = Date.distantPast
+    /// Closed on purpose (the quick note opened from it): it stays shut until the mouse goes away and comes back.
+    private var heldShut = false
+    func closeUntilMouseLeaves() {
+        heldShut = true
+        peekUntil = .distantPast
+        keyOpenUntil = .distantPast
+    }
     /// Opens the notch whatever it holds, to try the motion and size settings.
     var previewUntil = Date.distantPast
     var levelUntil = Date.distantPast
@@ -9015,7 +9440,8 @@ final class NotchController {
             : (inside && now.timeIntervalSince(hoverSince ?? now) >= 0.12)
         // Stay open while macOS asks for camera permission (the mouse goes to that prompt).
         if ui.toast != nil && now >= toastUntil { ui.toast = nil }
-        let want = hovering || dragNear || camera.asking || now < mirrorHoldUntil || now < toastUntil || now < previewUntil || now < keyOpenUntil
+        if heldShut && !inside { heldShut = false }
+        let want = (hovering && !heldShut) || dragNear || camera.asking || now < mirrorHoldUntil || now < toastUntil || now < previewUntil || now < keyOpenUntil
             || (now < peekUntil && (np.hasMedia || foco.session != nil || !activities.items.isEmpty))
         // Dragging a file in needs the drop zone, not the mirror; nor is there one with the add-on off.
         if ui.mirrorOn && (fileDrag || !Settings.shared.mirrorEnabled) { ui.mirrorOn = false }
@@ -9036,7 +9462,7 @@ final class NotchController {
         }
         if inside { peekUntil = .distantPast; keyOpenUntil = .distantPast }
         if ui.expanded && rows > 0 { activities.markSeen() }
-        let lift = inside && !ui.expanded
+        let lift = inside && !ui.expanded && !heldShut
         if ui.hovering != lift { ui.hovering = lift }
         let ignore = !(inside || dragNear)
         if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
@@ -9059,6 +9485,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var micHotKey: HotKey?
     /// Only there while a command waits, so nothing else loses these keys.
     private var approveKeys: [HotKey] = []
+    private var duckWatch: AnyCancellable?
+
+    func applicationWillTerminate(_ notification: Notification) {
+        np.restoreVolumeNow()
+    }
     private var waitingWatch: AnyCancellable?
     /// What lowering the lid did, so raising it undoes exactly that.
     private var lidPausedMusic = false
@@ -9150,6 +9581,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     HotKey(keyCode: kVK_Return, modifiers: controlKey | optionKey) { [weak self] in self?.answerByKey("allow") },
                     HotKey(keyCode: kVK_Delete, modifiers: controlKey | optionKey) { [weak self] in self?.answerByKey("deny") },
                 ]
+            }
+        // Only NotchUser has both the music and the agents: the song steps back while one waits for you.
+        duckWatch = activities.$items
+            .map { $0.contains { $0.state == .waiting } }
+            .removeDuplicates()
+            .sink { [weak self] waiting in
+                guard let self else { return }
+                self.np.duck(waiting && Settings.shared.duckForAgents)
             }
         Updates.shared.start()
         NotificationCenter.default.addObserver(forName: Settings.updatesChanged, object: nil, queue: .main) { _ in Updates.shared.start() }
@@ -9292,6 +9731,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         center.addObserver(forName: Settings.batteryChanged, object: nil, queue: .main) { [weak self] _ in self?.battery.update() }
         updateOpenHotKey()
         center.addObserver(forName: Settings.openKeyChanged, object: nil, queue: .main) { [weak self] _ in self?.updateOpenHotKey() }
+        center.addObserver(forName: QuickNote.opened, object: nil, queue: .main) { [weak self] _ in
+            self?.controllers.forEach { $0.closeUntilMouseLeaves() }
+        }
         center.addObserver(forName: Settings.micChanged, object: nil, queue: .main) { [weak self] _ in
             self?.mic.update()
             self?.updateMicHotKey()
@@ -9425,6 +9867,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let seconds = q["seconds"].flatMap(Double.init), seconds >= 1 else { return }
             foco.startOwn(seconds: seconds, label: q["title"] ?? "")
             peek(3)
+        case "settings":
+            // notchuser://settings?pane=agents
+            SettingsWindow.shared.show(welcome: false, pane: q["pane"].flatMap(SettingsModel.Pane.init(rawValue:)) ?? .general)
+        case "welcome":
+            // The first-launch walkthrough again (Settings has a button for it too).
+            SettingsWindow.shared.show(welcome: true)
         case "awake":
             // notchuser://awake?hours=2, ?minutes=30, nothing for until turned off, ?off=1 to stop.
             if q["off"] != nil { Launcher.shared.stopAwake(); return }
@@ -9499,6 +9947,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// No menu bar shows for this app, but ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z in its text fields (Settings, the
+/// quick note) still go through the main menu's Edit items: without them, pasting does nothing.
+func editMenu() -> NSMenu {
+    let bar = NSMenu()
+    let edit = NSMenu(title: "Edit")
+    let items: [(String, Selector, String, NSEvent.ModifierFlags)] = [
+        ("Undo", Selector(("undo:")), "z", .command), ("Redo", Selector(("redo:")), "z", [.command, .shift]),
+        ("Cut", #selector(NSText.cut(_:)), "x", .command), ("Copy", #selector(NSText.copy(_:)), "c", .command),
+        ("Paste", #selector(NSText.paste(_:)), "v", .command), ("Select All", #selector(NSText.selectAll(_:)), "a", .command),
+    ]
+    for (title, action, key, mods) in items {
+        let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        i.keyEquivalentModifierMask = mods
+        edit.addItem(i)
+    }
+    let holder = NSMenuItem()
+    holder.submenu = edit
+    bar.addItem(holder)
+    return bar
+}
+
 @main
 enum Main {
     static func main() {
@@ -9509,6 +9978,7 @@ enum Main {
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
+        app.mainMenu = editMenu()
         app.run()
     }
 }

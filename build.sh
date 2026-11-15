@@ -4,7 +4,7 @@
 #   ./build.sh release   build dist/NotchUser.zip to share (does not install)
 set -e
 cd "$(dirname "$0")"
-VERSION=1.10.0
+VERSION=1.10.1
 BUNDLE_ID=io.github.notchuser
 MIN_MACOS=14.0
 
@@ -57,7 +57,7 @@ cat > $APP/Contents/Info.plist <<EOF
   <key>LSUIElement</key><true/>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>en</string><string>pt</string><string>es</string></array>
-  <key>NSAppleEventsUsageDescription</key><string>To show and control the music playing in Spotify and Apple Music.</string>
+  <key>NSAppleEventsUsageDescription</key><string>To show and control the music playing in Spotify and Apple Music, and to send your quick note to Notes.</string>
   <key>NSCameraUsageDescription</key><string>The notch mirror shows your camera so you can check yourself before a call. Nothing is recorded.</string>
   <key>CFBundleURLTypes</key><array><dict>
     <key>CFBundleURLName</key><string>$BUNDLE_ID</string>
@@ -68,9 +68,9 @@ EOF
 # The macOS permission prompt in each language.
 typeset -A PERM_TEXT
 PERM_TEXT=(
-  en "To show and control the music playing in Spotify and Apple Music."
-  pt "Para mostrar e controlar a música do Spotify e do Apple Music."
-  es "Para mostrar y controlar la música de Spotify y Apple Music."
+  en "To show and control the music playing in Spotify and Apple Music, and to send your quick note to Notes."
+  pt "Para mostrar e controlar a música do Spotify e do Apple Music, e para mandar sua nota rápida para o Notas."
+  es "Para mostrar y controlar la música de Spotify y Apple Music, y para enviar tu nota rápida a Notas."
 )
 typeset -A CAM_TEXT
 CAM_TEXT=(

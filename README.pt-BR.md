@@ -145,6 +145,7 @@ Requer **macOS 14 Sonoma ou mais novo**, Apple Silicon ou Intel.
 
 - **Sem conta, sem estatísticas, sem rastreamento.**
 - Conexões de rede: a capa do Spotify (dos servidores do Spotify); uma vez por dia, o número da versão mais nova no GitHub, pra avisar quando sair atualização (dá pra desligar em **Ajustes → Geral**), e a própria versão nova, do GitHub, se você clicar pra instalar; e, só se você ligar as letras e abrir, o nome da música, o artista e a duração pro [LRCLIB](https://lrclib.net), um banco de letras gratuito.
+- Sites que você adiciona ao notch: o ícone, buscado uma vez no próprio site e guardado no seu Mac. Só quando o site recusa o app (LinkedIn, Crunchyroll…) é que apenas o nome dele vai pro serviço de ícones do Google ou do DuckDuckGo.
 - Agentes e atividades ficam no seu Mac: conversam com o notch por arquivos locais. Conectar um agente só adiciona os hooks do NotchUser nos ajustes dele, depois de um backup. O modo privado tira seus pedidos e as respostas dos agentes do notch.
 - O reconhecimento de texto roda no seu Mac e a imagem é apagada na hora. Cada permissão só é pedida pelo recurso que precisa dela.
 
