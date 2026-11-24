@@ -105,7 +105,7 @@ Quando o Claude Code ou o Codex termina, o notch abre com o logo dele, o que voc
   <img src="Assets/screens/shelf.gif" width="640" alt="Arrastando um arquivo até a prateleira do notch e depois para outra pasta">
 </p>
 
-**Agentes de IA e programação:** Claude Code, Codex (app e CLI) e Copilot (VS Code e CLI) se conectam em **Ajustes → Complementos**. Builds são detectados sozinhos. No Terminal:
+**Agentes de IA e programação:** Claude Code, Codex (app e CLI) e Copilot (VS Code e CLI) se conectam em **Ajustes → Agentes**. Builds são detectados sozinhos. No Terminal:
 
 ```bash
 notch run npm test              # acompanhe qualquer comando até terminar
@@ -188,7 +188,7 @@ Funciona em qualquer Mac com macOS 14 ou mais novo: sem notch, o NotchUser apare
 Não. Sem plano pago, sem conta, sem anúncios. Se ele te ajuda, dá pra [apoiar o projeto](https://github.com/sponsors/Magnumja) ou só deixar uma estrela.
 
 **Quais agentes de IA funcionam?**
-Claude Code (app e CLI), Codex (app e CLI) e GitHub Copilot (VS Code e CLI). Conecte em **Ajustes → Complementos**; nada é enviado pra lugar nenhum, eles falam com o notch por arquivos locais.
+Claude Code (app e CLI), Codex (app e CLI) e GitHub Copilot (VS Code e CLI). Conecte em **Ajustes → Agentes**; nada é enviado pra lugar nenhum, eles falam com o notch por arquivos locais.
 
 ## Contribuir
 

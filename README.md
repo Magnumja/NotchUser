@@ -106,7 +106,7 @@ When Claude Code or Codex finishes, the notch opens with its logo, what you aske
   <img src="Assets/screens/shelf.gif" width="640" alt="Dragging a file into the notch shelf and out into another folder">
 </p>
 
-**AI agents and dev work:** Claude Code, Codex (app and CLI) and Copilot (VS Code and CLI) connect from **Settings → Add-ons**. Builds are detected automatically. From the Terminal:
+**AI agents and dev work:** Claude Code, Codex (app and CLI) and Copilot (VS Code and CLI) connect from **Settings → Agents**. Builds are detected automatically. From the Terminal:
 
 ```bash
 notch run npm test              # follow any command until it ends
@@ -189,7 +189,7 @@ It works on any Mac with macOS 14 or later: without a notch, NotchUser shows as 
 No. No paid tier, no account, no ads. If it helps you, you can [sponsor the project](https://github.com/sponsors/Magnumja) or just leave a star.
 
 **Which AI agents work?**
-Claude Code (app and CLI), Codex (app and CLI) and GitHub Copilot (VS Code and CLI). Connect them in **Settings → Add-ons**; nothing is sent anywhere, they talk to the notch through local files.
+Claude Code (app and CLI), Codex (app and CLI) and GitHub Copilot (VS Code and CLI). Connect them in **Settings → Agents**; nothing is sent anywhere, they talk to the notch through local files.
 
 ## Contributing
 
