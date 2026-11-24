@@ -22,16 +22,18 @@
 <p align="center">
   <a href="../../releases/latest/download/NotchUser.zip"><b>⬇ Download NotchUser for Mac</b></a>
   &nbsp;·&nbsp;
+  <a href="https://notchuserlp.vercel.app">Website</a>
+  &nbsp;·&nbsp;
   <a href="README.pt-BR.md">Leia em português</a>
 </p>
 
 <p align="center">
-  <img src="Assets/screens/hero.png" width="820" alt="NotchUser open under the notch, playing a song from Spotify">
+  <img src="Assets/screens/hero.png" width="820" alt="NotchUser open under the notch, with a song playing">
 </p>
 
 <p align="center">
-  <a href="Assets/video/NotchUser-Promo.mp4"><img src="Assets/video/poster.png" width="640" alt="Play the 30-second NotchUser film"></a>
-  <br><sub>🎬 <a href="Assets/video/NotchUser-Promo.mp4"><b>Watch the 30-second film</b></a></sub>
+  <a href="Assets/video/Beyond-the-Notch.mp4"><img src="Assets/video/beyond-poster.jpg" width="640" alt="Play the film Beyond the Notch"></a>
+  <br><sub>🎬 <a href="Assets/video/Beyond-the-Notch.mp4"><b>Watch <i>Beyond the Notch</i> (45 seconds)</b></a></sub>
 </p>
 
 ---
@@ -46,14 +48,46 @@ The notch is dead space in the middle of your menu bar. NotchUser turns it into 
 - **A shelf for everything in transit.** Drop files, links or text on it, drag them out wherever they go.
 - **Light enough to forget.** About **0.1% CPU and 30–50 MB** with music playing. The animations run in Core Animation, inside macOS.
 
+## New in 1.10.1
+
+**See what your agent is doing.** Claude Code's row shows the action of the moment ("Editing main.swift", "Running the tests"), how many helpers are working, and when it compacts the conversation. When it's waiting for your next message, the notch tells you.
+
+<p align="center">
+  <img src="Assets/screens/agents.png" width="720" alt="The notch with a Codex request to allow or deny, Claude Code editing a file with two helpers, and the music">
+</p>
+
+**The music dips while an agent waits for you.** When Claude Code, Codex or Copilot asks for approval, Spotify or Music drops to about a third and comes back gently once you answer. Turn it off in **Settings → Agents**.
+
+**Drag to add, pull away to remove.** Drop a link or an app on "Make a shortcut", beside the shelf. To remove one, hold its icon and pull it away.
+
+<p align="center">
+  <img src="Assets/screens/drop.png" width="720" alt="An item over the shortcut target, beside the shelf">
+</p>
+
+**Also:**
+
+- **A new welcome**, and the agents in a Settings pane of their own.
+- **⌘V and the other edit shortcuts** work in text fields.
+- **The quick note** opens in the top right corner and no longer covers the notch.
+- **Icons for sites that turn apps away too** (LinkedIn, Crunchyroll…).
+- **Lighter with the notch open:** a long title rolls three times and rests.
+- **Hooks never hold an agent up:** an update that takes more than 1.5 s is skipped.
+
 ## New in 1.10
 
-- **Your sites and apps in the notch.** Up to 8 favorites as glossy icons that tilt toward the mouse and glow in their own color. They're bigger on a page of their own and compact when everything is stacked. Add them in Settings → Add-ons.
-- **Quick buttons.** Keep the Mac awake (until you stop it, or 1, 2 or 4 hours from the menu), lock the screen, a quick note under the notch, and up to 6 of your own Shortcuts.
+<p align="center">
+  <img src="Assets/screens/favorites.png" width="720" alt="The music with favorites and quick buttons below">
+</p>
+
+- **Your sites and apps in the notch.** Up to 8 favorites as glossy icons that tilt toward the mouse and glow in their own color. They're bigger on a page of their own and compact when everything is stacked.
+- **Quick buttons.** Keep the Mac awake (until you stop it, or 1, 2 or 4 hours from the menu), lock the screen, a quick note, and up to 6 of your own Shortcuts.
 - **AirDrop from the shelf.** One button sends what's on it.
 - **A tidier menu**, and a timer with "Other…" and "Again".
 
-## New in 1.9
+<details>
+<summary><b>New in earlier versions (1.6 to 1.9)</b></summary>
+
+### New in 1.9
 
 - **See what the agent is doing.** Click a running Claude Code activity and the notch shows its plan: what's done, the step it's on, and what's left. The row itself reads "2/5 · Running the tests".
 - **A timer of its own.** Right-click the notch → Timer, or `notch timer 25m "Tea"`. It counts down in the closed notch, survives sleep and a restart, and chimes when it's up. No other app needed.
@@ -61,7 +95,7 @@ The notch is dead space in the middle of your menu bar. NotchUser turns it into 
 - **Open it from the keyboard.** Turn on ⌃⌥N in the add-ons to open and close the notch without the mouse.
 - **Lighter still.** A paused Spotify or Music is no longer asked for news every two seconds.
 
-## New in 1.8
+### New in 1.8
 
 - **Make it yours.** Album, pure black or a slow Aurora behind the notch. A highlight color that follows the album or stays the one you pick. Choose what the closed notch shows on each side (cover, waves, clock) and how round its corners are.
 - **Light that means something.** An amber glow while something waits for you, and a light that runs around the notch when it finishes.
@@ -71,13 +105,13 @@ The notch is dead space in the middle of your menu bar. NotchUser turns it into 
 - **Agents that keep working.** Connections survive moving the app, **Check agents** tests and repairs them, and private mode keeps your prompts off the screen.
 - **More builds found.** Your own `build.sh`, `swiftc`, `tsc`, `vite build`, `jest`, `dotnet`, `flutter` and more. `notch run` shows why a command failed.
 
-## New in 1.7
+### New in 1.7
 
 When Claude Code or Codex finishes, the notch opens with its logo, what you asked and a short summary of what it did. One click takes you back to the app.
 
 **1.7.1:** the notch tells you when a new version is out, so you never miss an update. Also installable with Homebrew.
 
-## New in 1.6
+### New in 1.6
 
 | | |
 | --- | --- |
@@ -88,6 +122,8 @@ When Claude Code or Codex finishes, the notch opens with its logo, what you aske
 | ✨ **Motion** | The notch oozes out of the bezel and back in. Pick Minimal, Calm, Fluid or Lively, the speed, and the size. |
 | 🧰 **More add-ons** | Gestures for volume and songs, mic indicator and global mute (⌃⌥M), pause when the lid is lowered, haptic pulses, a glow at the screen edges, quick actions on the shelf. |
 
+</details>
+
 ## Three styles
 
 <p align="center">
@@ -95,6 +131,10 @@ When Claude Code or Codex finishes, the notch opens with its logo, what you aske
 </p>
 
 **Basic** is pure black, like part of the hardware. **Elevated** adds depth, a glow in the album's color and a cover that tilts toward the mouse. **Glass** is Apple's Liquid Glass (macOS 26+) with waves that follow the music.
+
+<p align="center">
+  <img src="Assets/screens/make-it-yours.gif" width="640" alt="Changing the notch's background and style">
+</p>
 
 ## Everything it does
 
@@ -115,12 +155,20 @@ notch timer 25m "Tea"           # a countdown in the notch
 notch progress build 40         # your own activity, with progress
 ```
 
+<p align="center">
+  <img src="Assets/screens/agents-demo.gif" width="640" alt="Answering a question and allowing a command right in the notch">
+</p>
+
+<p align="center">
+  <img src="Assets/screens/plan.png" width="720" alt="The agent's plan in the notch: steps done, the current one and what's left">
+</p>
+
 **Optional add-ons** (off until you turn them on): copy text from the screen (⌘⇧2), camera mirror, Bluetooth headphones in high quality, gestures on the notch, mic indicator and mute, pause on lid close, synced lyrics.
 
 **And also:** a pill on external displays, English / Português / Español, and a welcome tour that sets everything up in one go.
 
 <p align="center">
-  <img src="Assets/screens/closed.png" width="820" alt="The closed notch showing the album cover and a wave in the album's color">
+  <img src="Assets/screens/closed.png" width="820" alt="The closed notch showing the album cover and bars in the album's color">
 </p>
 
 ## Install

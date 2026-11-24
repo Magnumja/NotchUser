@@ -21,16 +21,18 @@
 <p align="center">
   <a href="../../releases/latest/download/NotchUser.zip"><b>⬇ Baixar o NotchUser para Mac</b></a>
   &nbsp;·&nbsp;
+  <a href="https://notchuserlp.vercel.app">Site</a>
+  &nbsp;·&nbsp;
   <a href="README.md">Read in English</a>
 </p>
 
 <p align="center">
-  <img src="Assets/screens/hero.png" width="820" alt="NotchUser aberto sob o notch, tocando uma música do Spotify">
+  <img src="Assets/screens/hero-pt.png" width="820" alt="NotchUser aberto sob o notch, com uma música tocando">
 </p>
 
 <p align="center">
-  <a href="Assets/video/NotchUser-Promo.mp4"><img src="Assets/video/poster.png" width="640" alt="Assistir ao filme de 30 segundos do NotchUser"></a>
-  <br><sub>🎬 <a href="Assets/video/NotchUser-Promo.mp4"><b>Assista ao filme de 30 segundos</b></a></sub>
+  <a href="Assets/video/Beyond-the-Notch.mp4"><img src="Assets/video/beyond-poster.jpg" width="640" alt="Assistir ao filme Beyond the Notch"></a>
+  <br><sub>🎬 <a href="Assets/video/Beyond-the-Notch.mp4"><b>Assista a <i>Beyond the Notch</i> (45 segundos)</b></a></sub>
 </p>
 
 ---
@@ -45,14 +47,46 @@ O notch é um espaço morto no meio da barra de menus. O NotchUser transforma el
 - **Uma prateleira pra tudo que está de passagem.** Solte arquivos, links ou texto nela e arraste pra onde precisar.
 - **Tão leve que dá pra esquecer.** Cerca de **0,1% de CPU e 30–50 MB** com música tocando. As animações rodam no Core Animation, dentro do macOS.
 
+## Novidades da 1.10.1
+
+**Veja o que o agente está fazendo.** A linha do Claude Code mostra a ação do momento ("Editando main.swift", "Rodando os testes"), quantos subagentes estão trabalhando e quando ele compacta a conversa. Quando ele espera sua próxima mensagem, o notch avisa.
+
+<p align="center">
+  <img src="Assets/screens/agents-pt.png" width="720" alt="O notch com um pedido do Codex para permitir ou negar, o Claude Code editando um arquivo com dois subagentes, e a música">
+</p>
+
+**A música abaixa enquanto um agente espera você.** Quando o Claude Code, o Codex ou o Copilot pedem aprovação, o Spotify ou o Music descem para cerca de um terço e voltam suave quando você responde. Dá pra desligar em **Ajustes → Agentes**.
+
+**Arraste para adicionar, puxe para tirar.** Solte um link ou app em "Criar atalho", ao lado da prateleira. Pra tirar, segure o ícone e puxe pra fora.
+
+<p align="center">
+  <img src="Assets/screens/drop-pt.png" width="720" alt="Um item sobre a área de criar atalho, ao lado da prateleira">
+</p>
+
+**E também:**
+
+- **Boas-vindas novas**, e os agentes numa seção própria dos Ajustes.
+- **⌘V e os outros atalhos de edição** funcionam nos campos de texto.
+- **A nota rápida** abre no canto superior direito e não cobre mais o notch.
+- **Ícones também dos sites que recusam apps** (LinkedIn, Crunchyroll…).
+- **Mais leve com o notch aberto:** um título longo rola três vezes e para.
+- **Os hooks nunca seguram o agente:** se uma atualização demora mais de 1,5 s, ela é pulada.
+
 ## Novidades da 1.10
 
-- **Seus sites e apps no notch.** Até 8 favoritos como ícones brilhantes que inclinam na direção do mouse e brilham na própria cor. Ficam maiores numa página só deles e compactos quando está tudo junto. Adicione em Ajustes → Complementos.
-- **Botões rápidos.** Manter o Mac acordado (até você desligar, ou 1, 2 ou 4 horas pelo menu), bloquear a tela, uma nota rápida embaixo do notch e até 6 dos seus Atalhos.
+<p align="center">
+  <img src="Assets/screens/favorites-pt.png" width="720" alt="A música com os favoritos e os botões rápidos embaixo">
+</p>
+
+- **Seus sites e apps no notch.** Até 8 favoritos como ícones brilhantes que inclinam na direção do mouse e brilham na própria cor. Ficam maiores numa página só deles e compactos quando está tudo junto.
+- **Botões rápidos.** Manter o Mac acordado (até você desligar, ou 1, 2 ou 4 horas pelo menu), bloquear a tela, uma nota rápida e até 6 dos seus Atalhos.
 - **AirDrop da prateleira.** Um botão manda o que está nela.
 - **Menu mais organizado**, e um timer com "Outro tempo…" e "De novo".
 
-## Novidades da 1.9
+<details>
+<summary><b>Novidades das versões anteriores (1.6 a 1.9)</b></summary>
+
+### Novidades da 1.9
 
 - **Veja o que o agente está fazendo.** Clique numa atividade do Claude Code em andamento e o notch mostra o plano dele: o que já foi feito, a etapa atual e o que falta. A própria linha mostra "2/5 · Rodando os testes".
 - **Um timer próprio.** Clique com o botão direito no notch → Timer, ou `notch timer 25m "Chá"`. Ele conta no notch fechado, sobrevive a dormir e reiniciar, e toca quando acaba. Sem precisar de outro app.
@@ -60,7 +94,7 @@ O notch é um espaço morto no meio da barra de menus. O NotchUser transforma el
 - **Abra pelo teclado.** Ligue o ⌃⌥N nos complementos para abrir e fechar o notch sem o mouse.
 - **Ainda mais leve.** Um Spotify ou Music pausado não é mais consultado a cada dois segundos.
 
-## Novidades da 1.8
+### Novidades da 1.8
 
 - **Do seu jeito.** Álbum, preto puro ou uma Aurora lenta atrás do notch. Uma cor de destaque que segue o álbum ou fica na que você escolher. Escolha o que o notch fechado mostra em cada lado (capa, ondas, relógio) e o arredondamento dos cantos.
 - **Luz que quer dizer algo.** Um brilho âmbar enquanto algo espera você e uma luz que percorre o notch quando termina.
@@ -70,13 +104,13 @@ O notch é um espaço morto no meio da barra de menus. O NotchUser transforma el
 - **Agentes que continuam funcionando.** As conexões sobrevivem quando o app muda de lugar, **Verificar agentes** testa e repara, e o modo privado tira seus pedidos da tela.
 - **Mais builds encontrados.** Seu próprio `build.sh`, `swiftc`, `tsc`, `vite build`, `jest`, `dotnet`, `flutter` e outros. O `notch run` mostra por que um comando falhou.
 
-## Novidades da 1.7
+### Novidades da 1.7
 
 Quando o Claude Code ou o Codex termina, o notch abre com o logo dele, o que você pediu e um resumo curto do que ele fez. Um clique leva de volta ao app.
 
 **1.7.1:** o notch avisa quando sai versão nova, pra você nunca perder uma atualização. E agora dá pra instalar pelo Homebrew.
 
-## Novidades da 1.6
+### Novidades da 1.6
 
 | | |
 | --- | --- |
@@ -87,6 +121,8 @@ Quando o Claude Code ou o Codex termina, o notch abre com o logo dele, o que voc
 | ✨ **Movimento** | O notch sai da borda e volta pra dentro como um líquido. Escolha Mínima, Suave, Fluida ou Viva, a velocidade e o tamanho. |
 | 🧰 **Mais complementos** | Gestos de volume e música, indicador e mudo global do microfone (⌃⌥M), pausar ao baixar a tampa, pulsos táteis, brilho nas bordas da tela, ações rápidas na prateleira. |
 
+</details>
+
 ## Três estilos
 
 <p align="center">
@@ -94,6 +130,10 @@ Quando o Claude Code ou o Codex termina, o notch abre com o logo dele, o que voc
 </p>
 
 **Básico** é preto puro, como parte do hardware. **Elevado** ganha profundidade, um brilho na cor do álbum e a capa que inclina na direção do mouse. **Vidro** é o Liquid Glass da Apple (macOS 26+), com ondas que seguem a música.
+
+<p align="center">
+  <img src="Assets/screens/make-it-yours.gif" width="640" alt="Trocando o fundo e o estilo do notch">
+</p>
 
 ## Tudo o que ele faz
 
@@ -114,12 +154,20 @@ notch timer 25m "Chá"           # uma contagem no notch
 notch progress build 40         # sua própria atividade, com progresso
 ```
 
+<p align="center">
+  <img src="Assets/screens/agents-demo.gif" width="640" alt="Respondendo uma pergunta e permitindo um comando direto no notch">
+</p>
+
+<p align="center">
+  <img src="Assets/screens/plan-pt.png" width="720" alt="O plano do agente no notch, com as etapas feitas, a atual e as que faltam">
+</p>
+
 **Complementos opcionais** (desligados até você ligar): copiar texto da tela (⌘⇧2), espelho de câmera, fone Bluetooth em alta qualidade, gestos no notch, indicador e mudo do microfone, pausar ao baixar a tampa, letras sincronizadas.
 
 **E mais:** uma pílula em telas externas, Português / English / Español e uma apresentação que configura tudo de uma vez.
 
 <p align="center">
-  <img src="Assets/screens/closed.png" width="820" alt="O notch fechado mostrando a capa e uma onda na cor do álbum">
+  <img src="Assets/screens/closed.png" width="820" alt="O notch fechado mostrando a capa e barrinhas na cor do álbum">
 </p>
 
 ## Instalar
