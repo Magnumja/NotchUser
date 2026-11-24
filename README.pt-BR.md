@@ -31,8 +31,8 @@
 </p>
 
 <p align="center">
-  <a href="Assets/video/Beyond-the-Notch.mp4"><img src="Assets/video/beyond-poster.jpg" width="640" alt="Assistir ao filme Beyond the Notch"></a>
-  <br><sub>🎬 <a href="Assets/video/Beyond-the-Notch.mp4"><b>Assista a <i>Beyond the Notch</i> (45 segundos)</b></a></sub>
+  <a href="https://notchuserlp.vercel.app/assets/beyond-the-notch.mp4"><img src="Assets/video/beyond-poster.jpg" width="640" alt="Assistir ao filme Beyond the Notch"></a>
+  <br><sub>🎬 <a href="https://notchuserlp.vercel.app/assets/beyond-the-notch.mp4"><b>Assista a <i>Beyond the Notch</i> (45 segundos)</b></a></sub>
 </p>
 
 ---
